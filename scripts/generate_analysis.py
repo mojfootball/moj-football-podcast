@@ -90,18 +90,28 @@ def generate_persian_script(summary):
     ]
     prompt = "\n".join(lines)
 
-    resp = requests.post(
-        f"{GEMINI_URL}?key={GEMINI_API_KEY}",
-        json={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"response_mime_type": "application/json"},
-        },
-        timeout=60,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(raw_text)
+    last_error = None
+    for attempt in range(5):
+        if attempt > 0:
+            time.sleep(10 * attempt)
+        try:
+            resp = requests.post(
+                f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"response_mime_type": "application/json"},
+                },
+                timeout=60,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+            return json.loads(raw_text)
+        except requests.RequestException as e:
+            last_error = e
+            print(f"تلاش {attempt + 1} ناموفق بود: {e}")
+
+    raise last_error
 
 
 if __name__ == "__main__":
