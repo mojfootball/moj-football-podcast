@@ -6,7 +6,7 @@ import requests
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"].strip()
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-flash-latest:generateContent"
+    "gemini-flash-lite-latest:generateContent"
 )
 
 
