@@ -11,6 +11,16 @@ HEADERS = {"x-rapidapi-key": API_KEY}
 ID_TO_FA = {team_id: fa_name for fa_name, team_id in TEAMS.items()}
 OUR_IDS = set(ID_TO_FA.keys())
 
+STATE_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "processed_matches.json")
+
+
+def load_processed_ids():
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            return set(json.load(f))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
 
 def get_matches_for_date(date_str):
     all_matches = []
@@ -34,6 +44,8 @@ def find_finished_matches():
     today = datetime.now(timezone.utc).date()
     yesterday = today - timedelta(days=1)
     dates_to_check = [str(yesterday), str(today)]
+
+    processed_ids = load_processed_ids()
     finished = {}
 
     for date_str in dates_to_check:
@@ -53,8 +65,11 @@ def find_finished_matches():
             if "finish" not in state_desc.lower():
                 continue
 
-            our_team_fa = ID_TO_FA.get(home_id) or ID_TO_FA.get(away_id)
             match_id = m["id"]
+            if match_id in processed_ids:
+                continue
+
+            our_team_fa = ID_TO_FA.get(home_id) or ID_TO_FA.get(away_id)
             if match_id not in finished:
                 finished[match_id] = {
                     "id": match_id,
