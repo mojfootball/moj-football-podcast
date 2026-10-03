@@ -61,15 +61,56 @@ def summarize_match(details):
 
 
 def generate_persian_script(summary):
-    prompt = f"""
-تو داری دیالوگ یه پادکست ورزشی فارسی به اسم "موج فوتبال" رو می‌نویسی.
-دو تا مجری داریم:
-- "مجتبی" (مرد، کارشناس فنی، تحلیل تاکتیکی و آماری می‌ده)
-- "پگاه" (زن، مجری اصلی، سوال می‌پرسه، نظر می‌ده، بعضی‌جاها با مجتبی بحث/مخالفت می‌کنه)
+    lines = [
+        "تو داری دیالوگ یه پادکست ورزشی فارسی به اسم موج فوتبال رو می‌نویسی.",
+        "دو تا مجری داریم:",
+        "- مجتبی (مرد، کارشناس فنی، تحلیل تاکتیکی و آماری می‌ده)",
+        "- پگاه (زن، مجری اصلی، سوال می‌پرسه، نظر می‌ده، بعضی‌جاها با مجتبی بحث یا مخالفت می‌کنه)",
+        "",
+        "این اطلاعات ساختاریافته از بازی " + summary["home_team"] + " "
+        + str(summary["score"]) + " " + summary["away_team"]
+        + " (مسابقات: " + str(summary["league"]) + "، ورزشگاه: " + str(summary["venue"]) + ") هست:",
+        "",
+        json.dumps(summary, ensure_ascii=False, indent=2),
+        "",
+        "یه دیالوگ طبیعی، محاوره‌ای و جذاب بین مجتبی و پگاه بنویس که:",
+        "- با سلام و معرفی کوتاه بازی شروع بشه",
+        "- درباره‌ی روند بازی و لحظات کلیدی با هم گفتگو کنن، نه اینکه یکی فقط بخونه",
+        "- حداقل یک‌جا با هم سر یه موضوع بحث یا اختلاف‌نظر داشته باشن",
+        "- آمار بازی رو ضمن گفتگو تحلیل کنن، نه خشک و لیست‌وار",
+        "- با یه جمع‌بندی و خداحافظی کوتاه تموم بشه",
+        "",
+        "قوانین مهم:",
+        "- فقط از اطلاعاتی که توی داده‌ها اومده استفاده کن",
+        "- لحن کاملاً محاوره‌ای و دوستانه باشه",
+        "- کل گفتگو برای حدود سه تا چهار دقیقه خوانده‌شدن باشه",
+        "- خروجی رو فقط و فقط به‌صورت یه آرایه‌ی JSON معتبر بده، بدون هیچ توضیح اضافه.",
+        "هر عضو آرایه باید دو کلید داشته باشه: speaker (مقدارش female یا male) و text.",
+    ]
+    prompt = "\n".join(lines)
 
-این اطلاعات ساختاریافته از بازی {summary['home_team']} {summary['score']} {summary['away_team']}
-(مسابقات: {summary['league']}، ورزشگاه: {summary['venue']}) هست:
+    resp = requests.post(
+        f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+        json={
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"response_mime_type": "application/json"},
+        },
+        timeout=60,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+    return json.loads(raw_text)
 
-{json.dumps(summary, ensure_ascii=False, indent=2)}
 
-یه دیالوگ طبیعی، محاوره‌ای و جذاب بین مجتبی و پ
+if __name__ == "__main__":
+    import sys
+    from fetch_match_details import get_match_details
+
+    match_id = int(sys.argv[1])
+    details = get_match_details(match_id)
+    summary = summarize_match(details)
+    turns = generate_persian_script(summary)
+    for turn in turns:
+        label = "🎙️ پگاه" if turn["speaker"] == "female" else "🎙️ مجتبی"
+        print(f"{label}: {turn['text']}\n")
