@@ -61,60 +61,15 @@ def summarize_match(details):
 
 
 def generate_persian_script(summary):
-def generate_persian_script(summary):
     prompt = f"""
 تو داری دیالوگ یه پادکست ورزشی فارسی به اسم "موج فوتبال" رو می‌نویسی.
 دو تا مجری داریم:
-- "آرش" (مرد، کارشناس فنی، تحلیل تاکتیکی و آماری می‌ده)
-- "ساناز" (زن، مجری اصلی، سوال می‌پرسه، نظر می‌ده، بعضی‌جاها با آرش بحث/مخالفت می‌کنه)
+- "مجتبی" (مرد، کارشناس فنی، تحلیل تاکتیکی و آماری می‌ده)
+- "پگاه" (زن، مجری اصلی، سوال می‌پرسه، نظر می‌ده، بعضی‌جاها با مجتبی بحث/مخالفت می‌کنه)
 
 این اطلاعات ساختاریافته از بازی {summary['home_team']} {summary['score']} {summary['away_team']}
 (مسابقات: {summary['league']}، ورزشگاه: {summary['venue']}) هست:
 
 {json.dumps(summary, ensure_ascii=False, indent=2)}
 
-یه دیالوگ طبیعی، محاوره‌ای و جذاب بین آرش و ساناز بنویس که:
-- با سلام و معرفی کوتاه بازی شروع بشه
-- درباره‌ی روند بازی و لحظات کلیدی (گل‌ها، اتفاقات مهم) با هم گفتگو کنن، نه اینکه یکی فقط بخونه
-- حداقل یک‌جا با هم سر یه موضوع (مثلاً تصمیم داور، عملکرد یه تیم، یا یه تعویض) بحث یا اختلاف‌نظر داشته باشن
-- آمار بازی (مالکیت توپ، شوت‌ها، گل‌های موردانتظار و...) رو ضمن گفتگو تحلیل کنن، نه خشک و لیست‌وار
-- با یه جمع‌بندی و خداحافظی کوتاه تموم بشه
-
-قوانین مهم:
-- فقط از اطلاعاتی که توی داده‌ها اومده استفاده کن، هیچ آمار یا اتفاقی رو از خودت نساز
-- لحن کاملاً محاوره‌ای و دوستانه باشه (نه رسمی و کتابی)
-- کل گفتگو برای حدود ۳ تا ۴ دقیقه خوانده‌شدن باشه
-- خروجی رو فقط و فقط به‌صورت JSON معتبر زیر بده، بدون هیچ توضیح اضافه:
-
-[
-  {{"speaker": "female", "text": "..."}},
-  {{"speaker": "male", "text": "..."}},
-  ...
-]
-"""
-
-    resp = requests.post(
-        f"{GEMINI_URL}?key={GEMINI_API_KEY}",
-        json={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"response_mime_type": "application/json"},
-        },
-        timeout=60,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(raw_text)
-
-
-if __name__ == "__main__":
-    import sys
-    from fetch_match_details import get_match_details
-
-    match_id = int(sys.argv[1])
-    details = get_match_details(match_id)
-    summary = summarize_match(details)
-    turns = generate_persian_script(summary)
-    for turn in turns:
-        label = "🎙️ ساناز" if turn["speaker"] == "female" else "🎙️ آرش"
-        print(f"{label}: {turn['text']}\n")
+یه دیالوگ طبیعی، محاوره‌ای و جذاب بین مجتبی و پ
