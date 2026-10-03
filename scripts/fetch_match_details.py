@@ -1,7 +1,7 @@
 import os
 import requests
 
-API_KEY = os.environ["HIGHLIGHTLY_API_KEY"]
+API_KEY = os.environ["HIGHLIGHTLY_API_KEY"].strip()
 HEADERS = {"x-rapidapi-key": API_KEY}
 
 
