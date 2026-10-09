@@ -57,9 +57,9 @@ def tts_chunk(turns_chunk):
     }
 
     last_error = None
-    for attempt in range(5):
+    for attempt in range(3):
         if attempt > 0:
-            time.sleep(10 * attempt)
+            time.sleep(30 * attempt)
         try:
             resp = requests.post(f"{TTS_URL}?key={GEMINI_API_KEY}", json=payload, timeout=120)
             resp.raise_for_status()
@@ -74,15 +74,17 @@ def tts_chunk(turns_chunk):
     raise last_error
 
 
-def chunk_turns(turns, size=6):
+def chunk_turns(turns, size=14):
     for i in range(0, len(turns), size):
         yield turns[i:i + size]
 
 
 def synthesize_dialogue(turns, output_path):
     all_pcm = bytearray()
-    chunks = list(chunk_turns(turns, size=6))
+    chunks = list(chunk_turns(turns, size=14))
     for i, chunk in enumerate(chunks):
+        if i > 0:
+            time.sleep(20)
         print(f"ساخت صدا برای تکه {i + 1} از {len(chunks)}...")
         pcm = tts_chunk(chunk)
         all_pcm.extend(pcm)
