@@ -146,5 +146,5 @@ if __name__ == "__main__":
     summary = summarize_match(details)
     turns = generate_persian_script(summary)
     for turn in turns:
-        label = "🎙️ پگاه" if turn["speaker"] == "female" else "🎙️ مجتبآ"
-        print(f"{label}: {turn['text']}\n")
+                label = "🎙️ پگاه" if turn["speaker"] == "female" else "🎙️ مجتبآ"
+        print(f"[{turn.get('scene')}] {label}: {turn['text']}\n")
