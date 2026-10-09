@@ -14,13 +14,20 @@ TTS_URL = (
 MALE_NAME = "مجتبآ"
 FEMALE_NAME = "پگاه"
 MALE_VOICE = "Algenib"
-FEMALE_VOICE = "Laomedeia"
+MALE_VOICE = "Algenib"
+FEMALE_VOICE = "Pulcherrima"
 
 SAMPLE_RATE = 24000
 
+STYLE_INSTRUCTION = (
+    "با لحنی پرانرژی، محکم، شاد و هیجان‌انگیز صحبت کن، مثل دو مجری ورزشی حرفه‌ای "
+    "زنده روی آنتن که کاملاً سرحال و جذابن. به‌هیچ‌وجه آروم، یکنواخت، خسته، آهسته "
+    "یا با لحن کتاب‌خوانی/لالایی صحبت نکن:"
+)
+
 
 def turns_to_text_block(turns):
-    lines = []
+    lines = [STYLE_INSTRUCTION, ""]
     for t in turns:
         name = MALE_NAME if t["speaker"] == "male" else FEMALE_NAME
         lines.append(name + ": " + t["text"])
