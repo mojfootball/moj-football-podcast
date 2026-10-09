@@ -14,8 +14,7 @@ TTS_URL = (
 MALE_NAME = "مجتبآ"
 FEMALE_NAME = "پگاه"
 MALE_VOICE = "Algenib"
-MALE_VOICE = "Algenib"
-FEMALE_VOICE = "Pulcherrima"
+FEMALE_VOICE = "Kore"
 
 SAMPLE_RATE = 24000
 
