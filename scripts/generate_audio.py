@@ -13,8 +13,8 @@ TTS_URL = (
 
 MALE_NAME = "مجتبآ"
 FEMALE_NAME = "پگاه"
-MALE_VOICE = "Puck"
-FEMALE_VOICE = "Kore"
+MALE_VOICE = "Algenib"
+FEMALE_VOICE = "Laomedeia"
 
 SAMPLE_RATE = 24000
 
