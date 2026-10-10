@@ -95,7 +95,34 @@ def synthesize_dialogue(turns, output_path):
         wf.setframerate(SAMPLE_RATE)
         wf.writeframes(bytes(all_pcm))
 
-    print(f"فایل صوتی ساخته شد: {output_path}")
+    total_seconds = len(all_pcm) / 2 / SAMPLE_RATE
+    print(f"فایل صوتی ساخته شد: {output_path} (طول: {total_seconds:.1f} ثانیه)")
+    return total_seconds
+
+
+def build_scene_timeline(turns, total_seconds):
+    word_counts = [max(1, len(t["text"].split())) for t in turns]
+    total_words = sum(word_counts)
+
+    timeline = []
+    elapsed = 0.0
+    for t, wc in zip(turns, word_counts):
+        duration = total_seconds * (wc / total_words)
+        start = elapsed
+        end = elapsed + duration
+        scene = t.get("scene", "momentum")
+
+        if timeline and timeline[-1]["scene"] == scene:
+            timeline[-1]["end"] = end
+        else:
+            timeline.append({"scene": scene, "start": start, "end": end})
+
+        elapsed = end
+
+    if timeline:
+        timeline[-1]["end"] = total_seconds
+
+    return timeline
 
 
 if __name__ == "__main__":
@@ -111,4 +138,11 @@ if __name__ == "__main__":
     with open("dialogue.json", "w", encoding="utf-8") as f:
         json.dump(turns, f, ensure_ascii=False, indent=2)
 
-    synthesize_dialogue(turns, "episode.wav")
+    total_seconds = synthesize_dialogue(turns, "episode.wav")
+    timeline = build_scene_timeline(turns, total_seconds)
+
+    with open("timing.json", "w", encoding="utf-8") as f:
+        json.dump(timeline, f, ensure_ascii=False, indent=2)
+
+    print(f"\n{len(timeline)} بلوک صحنه ساخته شد:\n")
+    print(json.dumps(timeline, ensure_ascii=False, indent=2))
