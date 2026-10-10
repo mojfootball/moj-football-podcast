@@ -74,14 +74,14 @@ def tts_chunk(turns_chunk):
     raise last_error
 
 
-def chunk_turns(turns, size=14):
+def chunk_turns(turns, size=8):
     for i in range(0, len(turns), size):
         yield turns[i:i + size]
 
 
 def synthesize_dialogue(turns, output_path):
     all_pcm = bytearray()
-    chunks = list(chunk_turns(turns, size=14))
+    chunks = list(chunk_turns(turns, size=8))
     for i, chunk in enumerate(chunks):
         if i > 0:
             time.sleep(20)
