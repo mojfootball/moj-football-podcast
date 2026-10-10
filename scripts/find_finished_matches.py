@@ -18,7 +18,7 @@ STATE_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "processed_ma
 
 MIN_HOURS_AFTER_KICKOFF = 5
 
-DAILY_MATCH_LIMIT = 5
+DAILY_MATCH_LIMIT = 6
 
 PRIORITY_RANK = {team_id: i for i, team_id in enumerate(TEAM_PRIORITY)}
 
