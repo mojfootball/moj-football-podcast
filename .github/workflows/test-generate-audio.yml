@@ -32,3 +32,4 @@ jobs:
           path: |
             scripts/episode.wav
             scripts/dialogue.json
+            scripts/timing.json
