@@ -36,12 +36,22 @@ def summarize_match(details):
                 return {s["displayName"]: s["value"] for s in block.get("statistics", [])}
         return {}
 
+        prematch_list = details.get("predictions", {}).get("prematch", [])
+    prematch = prematch_list[0] if prematch_list else None
+
     return {
         "league": details.get("league", {}).get("name"),
         "venue": details.get("venue", {}).get("name"),
         "score": details.get("state", {}).get("score", {}).get("current"),
         "home_team": home.get("name"),
         "away_team": away.get("name"),
+        "home_logo": home.get("logo"),
+        "away_logo": away.get("logo"),
+        "prematch_prediction": {
+            "home_pct": prematch.get("probabilities", {}).get("home"),
+            "draw_pct": prematch.get("probabilities", {}).get("draw"),
+            "away_pct": prematch.get("probabilities", {}).get("away"),
+        } if prematch else None,
         "events": [
             {
                 "time": e.get("time"),
