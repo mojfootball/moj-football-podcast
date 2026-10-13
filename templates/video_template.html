@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>موج فوتبال</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg1: #0a0e1a;
+    --bg2: #141b30;
+    --gold: #d4af37;
+    --gold-soft: #e8c766;
+    --home: #4f8ff7;
+    --away: #f75f5f;
+    --text: #f4f1ea;
+    --muted: #8d93a6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 1920px; height: 1080px;
+    overflow: hidden;
+    font-family: 'Vazirmatn', sans-serif;
+    background: radial-gradient(ellipse at 50% 30%, var(--bg2) 0%, var(--bg1) 70%);
+    color: var(--text);
+  }
+  #stage {
+    position: relative;
+    width: 1920px; height: 1080px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .scene {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+    padding: 80px;
+  }
+  .scene.active { opacity: 1; }
+  .scene.active .kb { animation: kenburns 8s ease-out forwards; }
+  @keyframes kenburns {
+    from { transform: scale(1); }
+    to { transform: scale(1.04); }
+  }
+  .kb-wrap { position: absolute; inset: 0; z-index: 0; }
+
+  .brand {
+    position: absolute; bottom: 40px; right: 60px;
+    display: flex; align-items: center; gap: 16px; z-index: 5;
+  }
+  .brand-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--gold); }
+  .brand-text { font-weight: 800; font-size: 28px; color: var(--gold-soft); letter-spacing: 1px; }
+
+  .logo { width: 180px; height: 180px; object-fit: contain; filter: drop-shadow(0 8px 24px rgba(0,0,0,.5)); }
+  .team-name { font-weight: 800; font-size: 48px; }
+  .vs { font-size: 36px; color: var(--muted); font-weight: 600; }
+
+  .s-title .row { display: flex; align-items: center; gap: 90px; margin-bottom: 50px; }
+  .s-title .side { display: flex; flex-direction: column; align-items: center; gap: 24px; }
+  .s-title .score { font-size: 140px; font-weight: 900; color: var(--gold); letter-spacing: 4px; }
+  .s-title .league { font-size: 32px; color: var(--gold-soft); font-weight: 700; margin-bottom: 10px; }
+  .s-title .venue { font-size: 24px; color: var(--muted); margin-top: 18px; }
+
+  .s-momentum { align-items: stretch; }
+  .s-momentum h2 { text-align: center; font-size: 40px; color: var(--gold-soft); margin-bottom: 70px; font-weight: 800; }
+  .timeline { position: relative; width: 1600px; height: 6px; background: #2a3350; border-radius: 4px; margin: 0 auto; }
+  .tl-marker { position: absolute; top: -14px; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; transform: translateX(-50%); }
+  .tl-goal { background: var(--gold); color: #1a1500; }
+  .tl-card { background: #e23b3b; color: #fff; border-radius: 6px; }
+  .tl-sub { background: #3bb273; color: #fff; }
+  .tl-label { position: absolute; transform: translateX(-50%); font-size: 18px; color: var(--muted); width: 160px; text-align: center; }
+
+  .s-goal .goal-badge { font-size: 30px; color: var(--gold); font-weight: 800; letter-spacing: 6px; margin-bottom: 24px; }
+  .s-goal .player { font-size: 88px; font-weight: 900; margin-bottom: 18px; }
+  .s-goal .meta { font-size: 34px; color: var(--muted); }
+  .pitch { width: 420px; height: 260px; border: 3px solid rgba(255,255,255,.25); border-radius: 10px; position: relative; margin-bottom: 50px; background: rgba(255,255,255,.02); }
+  .pitch .goalmouth { position: absolute; right: -6px; top: 50%; transform: translateY(-50%); width: 10px; height: 90px; background: var(--gold); border-radius: 4px; }
+  .pitch .ball { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: #fff; left: 20px; top: 50%; transform: translateY(-50%); animation: shoot 1.8s ease-in forwards; animation-delay: .3s; }
+  @keyframes shoot { to { left: 390px; top: 40%; } }
+
+  .s-card-or-sub .icon { font-size: 90px; margin-bottom: 30px; color: var(--gold); }
+  .s-card-or-sub .player { font-size: 76px; font-weight: 800; margin-bottom: 18px; }
+  .s-card-or-sub .meta { font-size: 34px; color: var(--muted); }
+
+  .s-stat-bar { width: 1500px; }
+  .s-stat-bar h2 { text-align: center; font-size: 42px; color: var(--gold-soft); margin-bottom: 70px; font-weight: 800; }
+  .bar-row { display: flex; align-items: center; gap: 30px; margin-bottom: 30px; width: 1400px; }
+  .bar-label { width: 260px; font-size: 32px; font-weight: 700; text-align: center; }
+  .bar-track { flex: 1; height: 54px; background: #1c2440; border-radius: 10px; overflow: hidden; position: relative; }
+  .bar-fill { height: 100%; width: 0; transition: width 1.2s cubic-bezier(.2,.8,.2,1); display: flex; align-items: center; padding: 0 20px; font-weight: 800; font-size: 28px; }
+  .bar-fill.home { background: linear-gradient(90deg, var(--home), #7ab2ff); justify-content: flex-start; margin-right: auto; }
+  .bar-fill.away { background: linear-gradient(90deg, #ff8c8c, var(--away)); justify-content: flex-end; margin-left: auto; }
+
+  .s-shot-map h2 { font-size: 42px; color: var(--gold-soft); margin-bottom: 50px; font-weight: 800; }
+  .maps { display: flex; gap: 90px; }
+  .goalbox { width: 420px; height: 280px; border: 4px solid rgba(255,255,255,.3); border-radius: 8px; position: relative; background: rgba(255,255,255,.03); }
+  .goalbox .cap { text-align: center; margin-top: 16px; font-size: 26px; font-weight: 700; }
+  .shot-dot { position: absolute; width: 20px; height: 20px; border-radius: 50%; transform: translate(-50%,-50%); border: 2px solid rgba(0,0,0,.3); }
+  .shot-dot.goal { background: var(--gold); box-shadow: 0 0 16px var(--gold); }
+  .shot-dot.saved { background: #6f7797; }
+
+  .s-player-card .player { font-size: 90px; font-weight: 900; margin-bottom: 10px; }
+  .s-player-card .pos { font-size: 30px; color: var(--muted); margin-bottom: 50px; }
+  .stat-grid { display: flex; gap: 60px; }
+  .stat-chip { background: #1c2440; border: 1px solid #2a3350; border-radius: 16px; padding: 28px 40px; text-align: center; min-width: 220px; }
+  .stat-chip .v { font-size: 46px; font-weight: 800; color: var(--gold); }
+  .stat-chip .k { font-size: 22px; color: var(--muted); margin-top: 8px; }
+
+  .s-prediction h2 { font-size: 38px; color: var(--gold-soft); margin-bottom: 60px; font-weight: 800; }
+  .pred-bar { display: flex; width: 1300px; height: 70px; border-radius: 14px; overflow: hidden; }
+  .pred-bar div { display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 800; }
+  .pred-home { background: var(--home); }
+  .pred-draw { background: #5a6482; }
+  .pred-away { background: var(--away); }
+  .pred-final { margin-top: 50px; font-size: 34px; color: var(--muted); }
+  .pred-final b { color: var(--gold); }
+
+  .s-news .quote-mark { font-size: 100px; color: var(--gold); line-height: 0; margin-bottom: 20px; }
+  .s-news .headline { font-size: 44px; font-weight: 700; max-width: 1400px; text-align: center; line-height: 1.6; }
+
+  .s-outro .score { font-size: 100px; font-weight: 900; color: var(--gold); margin: 30px 0; }
+  .s-outro .cta { font-size: 30px; color: var(--muted); margin-top: 40px; }
+  .s-outro .names { font-size: 44px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div class="brand"><div class="brand-dot"></div><div class="brand-text">موج فوتبال</div></div>
+
+<script>
+const SCENES = __SCENES_JSON__;
+
+function fmtStat(v, fmt) {
+  if (v === null || v === undefined) return '-';
+  if (fmt === 'percent') return Math.round(v * 100) + '٪';
+  if (fmt === 'decimal') return Number(v).toFixed(2);
+  return v;
+}
+
+function shotPos(target) {
+  const map = {
+    'Low Left': [20, 75], 'Low Centre': [50, 80], 'Low Right': [80, 75],
+    'High Left': [20, 25], 'High Centre': [50, 20], 'High Right': [80, 25],
+    'Close Left': [30, 50], 'Close Right': [70, 50], 'Close High': [50, 35],
+  };
+  return map[target] || [50, 50];
+}
+
+function renderScene(s) {
+  const el = document.createElement('div');
+  el.className = 'scene s-' + s.type.replace(/_/g, '-');
+  const kb = document.createElement('div');
+  kb.className = 'kb kb-wrap';
+  el.appendChild(kb);
+
+  const content = document.createElement('div');
+  content.style.position = 'relative';
+  content.style.zIndex = '2';
+  content.style.display = 'flex';
+  content.style.flexDirection = 'column';
+  content.style.alignItems = 'center';
+
+  if (s.type === 'title') {
+    content.innerHTML = `
+      <div class="league">${s.league || ''}</div>
+      <div class="row">
+        <div class="side">${s.home_logo ? `<img class="logo" src="${s.home_logo}">` : ''}<div class="team-name">${s.home_team}</div></div>
+        <div class="score">${s.score || ''}</div>
+        <div class="side">${s.away_logo ? `<img class="logo" src="${s.away_logo}">` : ''}<div class="team-name">${s.away_team}</div></div>
+      </div>
+      <div class="venue">${s.venue || ''}</div>`;
+  }
+
+  else if (s.type === 'momentum') {
+    const evs = (s.events || []).slice().sort((a, b) => (parseInt(a.time) || 0) - (parseInt(b.time) || 0));
+    let markers = '';
+    let labelRow = 0;
+    evs.forEach(e => {
+      const t = parseInt(e.time) || 0;
+      const pct = Math.min(100, (t / 95) * 100);
+      let cls = 'tl-sub', icon = '◆';
+      if (e.type === 'Goal') { cls = 'tl-goal'; icon = '●'; }
+      else if (e.type === 'Red Card') { cls = 'tl-card'; icon = '■'; }
+      else if (e.type === 'Yellow Card') return;
+      const top = 40 + (labelRow % 2) * 60;
+      labelRow++;
+      markers += `<div class="tl-marker ${cls}" style="left:${pct}%">${icon}</div>`;
+      markers += `<div class="tl-label" style="left:${pct}%;top:${top}px">${e.player||''}<br>${e.time}'</div>`;
+    });
+    content.innerHTML = `<h2>روند بازی</h2><div class="timeline">${markers}</div>`;
+  }
+
+  else if (s.type === 'goal') {
+    const e = s.event || {};
+    content.innerHTML = `
+      <div class="goal-badge">● گل</div>
+      <div class="pitch"><div class="goalmouth"></div><div class="ball"></div></div>
+      <div class="player">${e.player || ''}</div>
+      <div class="meta">${e.team || ''} · دقیقه ${e.time || ''}${e.assist ? ' · پاس گل: ' + e.assist : ''}</div>`;
+  }
+
+  else if (s.type === 'card_or_sub') {
+    const e = s.event || {};
+    const isCard = e.type === 'Red Card';
+    content.innerHTML = `
+      <div class="icon">${isCard ? '■' : '◆'}</div>
+      <div class="player">${e.player || ''}</div>
+      <div class="meta">${e.team || ''} · دقیقه ${e.time || ''} · ${isCard ? 'اخراج' : 'تعویض'}</div>`;
+  }
+
+  else if (s.type === 'stat_bar') {
+    const home = s.home_value, away = s.away_value;
+    const total = (Number(home) || 0) + (Number(away) || 0) || 1;
+    const homePct = Math.max(8, Math.round((Number(home) || 0) / total * 100));
+    const awayPct = Math.max(8, 100 - homePct);
+    content.innerHTML = `
+      <h2>${s.label}</h2>
+      <div class="bar-row">
+        <div class="bar-label">${s.home_team}</div>
+        <div class="bar-track"><div class="bar-fill home" style="width:${homePct}%">${fmtStat(home, s.format)}</div></div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-label">${s.away_team}</div>
+        <div class="bar-track"><div class="bar-fill away" style="width:${awayPct}%">${fmtStat(away, s.format)}</div></div>
+      </div>`;
+  }
+
+  else if (s.type === 'shot_map') {
+    function dots(shots) {
+      return (shots || []).map(sh => {
+        const [x, y] = shotPos(sh.goalTarget);
+        const cls = sh.outcome === 'Goal' ? 'goal' : 'saved';
+        return `<div class="shot-dot ${cls}" style="left:${x}%;top:${y}%"></div>`;
+      }).join('');
+    }
+    content.innerHTML = `
+      <h2>نقشه‌ی شوت‌ها</h2>
+      <div class="maps">
+        <div><div class="goalbox">${dots(s.home_shots)}</div><div class="cap">${s.home_team}</div></div>
+        <div><div class="goalbox">${dots(s.away_shots)}</div><div class="cap">${s.away_team}</div></div>
+      </div>`;
+  }
+
+  else if (s.type === 'player_card') {
+    const p = s.player;
+    if (!p) { content.innerHTML = `<div class="player">-</div>`; }
+    else {
+      const chips = Object.entries(p.stats || {}).slice(0, 3)
+        .map(([k, v]) => `<div class="stat-chip"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+      content.innerHTML = `
+        <div class="player">${p.name}</div>
+        <div class="pos">${p.position || ''} · ${s.team || ''}</div>
+        <div class="stat-grid">${chips}</div>`;
+    }
+  }
+
+  else if (s.type === 'prediction') {
+    const p = s.prediction;
+    if (!p) { content.innerHTML = `<h2>پیش‌بینی قبل از بازی</h2>`; }
+    else {
+      const hp = parseFloat(p.home_pct) || 0, dp = parseFloat(p.draw_pct) || 0, ap = parseFloat(p.away_pct) || 0;
+      content.innerHTML = `
+        <h2>پیش‌بینی قبل از بازی</h2>
+        <div class="pred-bar">
+          <div class="pred-home" style="width:${hp}%">${p.home_pct}</div>
+          <div class="pred-draw" style="width:${dp}%">${p.draw_pct}</div>
+          <div class="pred-away" style="width:${ap}%">${p.away_pct}</div>
+        </div>
+        <div class="pred-final">نتیجه‌ی نهایی: <b>${s.home_team} ${s.score} ${s.away_team}</b></div>`;
+    }
+  }
+
+  else if (s.type === 'news') {
+    const h = s.headline;
+    content.innerHTML = `<div class="quote-mark">”</div><div class="headline">${h ? h.title : ''}</div>`;
+  }
+
+  else if (s.type === 'outro') {
+    content.innerHTML = `
+      <div class="names">${s.home_team} ${s.score} ${s.away_team}</div>
+      <div class="score">موج فوتبال</div>
+      <div class="cta">سابسکرایب کنید تا تحلیل بازی بعدی رو از دست ندید</div>`;
+  }
+
+  el.appendChild(content);
+  return el;
+}
+
+const stage = document.getElementById('stage');
+let currentIdx = -1;
+let currentEl = null;
+const startTime = performance.now();
+
+function tick() {
+  const t = (performance.now() - startTime) / 1000;
+  let idx = SCENES.findIndex(s => t >= s.start && t < s.end);
+  if (idx === -1 && t >= SCENES[SCENES.length - 1].end) idx = SCENES.length - 1;
+
+  if (idx !== -1 && idx !== currentIdx) {
+    currentIdx = idx;
+    const newEl = renderScene(SCENES[idx]);
+    stage.appendChild(newEl);
+    requestAnimationFrame(() => newEl.classList.add('active'));
+    if (currentEl) {
+      const old = currentEl;
+      setTimeout(() => old.remove(), 650);
+    }
+    currentEl = newEl;
+  }
+
+  if (t < SCENES[SCENES.length - 1].end + 1) {
+    requestAnimationFrame(tick);
+  } else {
+    document.title = 'DONE';
+  }
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
