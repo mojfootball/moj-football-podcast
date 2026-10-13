@@ -5,6 +5,7 @@ from find_finished_matches import find_finished_matches, STATE_FILE, load_proces
 from fetch_match_details import get_match_details
 from generate_analysis import summarize_match, generate_persian_script
 from generate_audio import synthesize_dialogue, build_scene_timeline
+from build_video import build_video
 
 
 def save_processed_id(match_id):
@@ -36,6 +37,9 @@ def process_match(match):
 
     with open(os.path.join(out_dir, "timing.json"), "w", encoding="utf-8") as f:
         json.dump(timeline, f, ensure_ascii=False, indent=2)
+
+    audio_path = os.path.join(out_dir, "episode.wav")
+    build_video(summary, timeline, audio_path, out_dir)
 
     save_processed_id(match_id)
     print(f"پردازش بازی {match_id} با موفقیت تموم شد.")
