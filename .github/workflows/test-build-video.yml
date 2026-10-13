@@ -13,20 +13,28 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - name: Install dependencies
         run: pip install -r requirements.txt
+
       - name: Install Playwright browser
         run: python -m playwright install --with-deps chromium chromium-headless-shell
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Build video
         working-directory: scripts
         env:
           HIGHLIGHTLY_API_KEY: ${{ secrets.HIGHLIGHTLY_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python build_video.py "${{ github.event.inputs.match_id }}"
+
       - name: Upload video
         uses: actions/upload-artifact@v4
         with:
