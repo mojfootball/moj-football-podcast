@@ -1,11 +1,13 @@
 import os
 import json
+import shutil
 import subprocess
 
 from scene_builder import build_scenes
 from record_video import record
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "..", "templates", "video_template.html")
+LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "logo.png")
 
 
 def render_page(scenes, out_path):
@@ -14,6 +16,10 @@ def render_page(scenes, out_path):
     html = tpl.replace("__SCENES_JSON__", json.dumps(scenes, ensure_ascii=False))
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html)
+
+    out_dir = os.path.dirname(out_path)
+    if os.path.exists(LOGO_PATH):
+        shutil.copy(LOGO_PATH, os.path.join(out_dir, "logo.png"))
 
 
 def build_video(summary, timeline, audio_path, out_dir):
