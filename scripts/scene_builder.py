@@ -52,7 +52,14 @@ class SceneBuilder:
 
         if scene_type == "goal":
             event = self._next(self.goal_events, "_goal_i")
-            return {"type": "goal", "event": event}
+            target = None
+            if event:
+                all_shots = summary["home_key_shots"] + summary["away_key_shots"]
+                for sh in all_shots:
+                    if sh.get("outcome") == "Goal" and sh.get("playerName") == event.get("player"):
+                        target = sh.get("goalTarget")
+                        break
+            return {"type": "goal", "event": event, "target": target}
 
         if scene_type == "card_or_sub":
             event = self._next(self.card_sub_events, "_card_sub_i")
@@ -124,16 +131,26 @@ class SceneBuilder:
         }
 
 
+MAX_SCENE_SECONDS = 12
+
+
 def build_scenes(summary, timeline):
     builder = SceneBuilder(summary)
     scenes = []
     for block in timeline:
-        content = builder.resolve(block["scene"])
-        scenes.append({
-            "start": block["start"],
-            "end": block["end"],
-            **content,
-        })
+        duration = block["end"] - block["start"]
+        n_parts = max(1, int(duration // MAX_SCENE_SECONDS) + 1)
+        part_len = duration / n_parts
+
+        for i in range(n_parts):
+            start = block["start"] + i * part_len
+            end = start + part_len
+            content = builder.resolve(block["scene"])
+            scenes.append({
+                "start": start,
+                "end": end,
+                **content,
+            })
     return scenes
 
 
