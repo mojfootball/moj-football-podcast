@@ -45,11 +45,10 @@
   .kb-wrap { position: absolute; inset: 0; z-index: 0; }
 
   .brand {
-    position: absolute; bottom: 40px; right: 60px;
-    display: flex; align-items: center; gap: 16px; z-index: 5;
+    position: absolute; bottom: 36px; right: 50px;
+    z-index: 5;
   }
-  .brand-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--gold); }
-  .brand-text { font-weight: 800; font-size: 28px; color: var(--gold-soft); letter-spacing: 1px; }
+  .brand img { height: 110px; width: auto; filter: drop-shadow(0 4px 12px rgba(0,0,0,.5)); }
 
   .logo { width: 180px; height: 180px; object-fit: contain; filter: drop-shadow(0 8px 24px rgba(0,0,0,.5)); }
   .team-name { font-weight: 800; font-size: 48px; }
@@ -73,10 +72,14 @@
   .s-goal .goal-badge { font-size: 30px; color: var(--gold); font-weight: 800; letter-spacing: 6px; margin-bottom: 24px; }
   .s-goal .player { font-size: 88px; font-weight: 900; margin-bottom: 18px; }
   .s-goal .meta { font-size: 34px; color: var(--muted); }
-  .pitch { width: 420px; height: 260px; border: 3px solid rgba(255,255,255,.25); border-radius: 10px; position: relative; margin-bottom: 50px; background: rgba(255,255,255,.02); }
-  .pitch .goalmouth { position: absolute; right: -6px; top: 50%; transform: translateY(-50%); width: 10px; height: 90px; background: var(--gold); border-radius: 4px; }
-  .pitch .ball { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: #fff; left: 20px; top: 50%; transform: translateY(-50%); animation: shoot 1.8s ease-in forwards; animation-delay: .3s; }
-  @keyframes shoot { to { left: 390px; top: 40%; } }
+  .pitch { width: 460px; height: 280px; border: 3px solid rgba(255,255,255,.4); border-radius: 10px; position: relative; margin-bottom: 50px;
+    background: repeating-linear-gradient(90deg, #1e6b35, #1e6b35 40px, #238040 40px, #238040 80px); overflow: hidden; }
+  .pitch .center-circle { position: absolute; left: 30px; top: 50%; width: 90px; height: 90px; border: 2px solid rgba(255,255,255,.5); border-radius: 50%; transform: translateY(-50%); }
+  .pitch .penalty-box { position: absolute; right: 0; top: 20%; width: 110px; height: 60%; border: 2px solid rgba(255,255,255,.5); border-left: none; }
+  .pitch .goalmouth { position: absolute; right: -6px; top: 32%; width: 10px; height: 36%; background: var(--gold); border-radius: 4px; box-shadow: 0 0 20px var(--gold); }
+  .pitch .ball { position: absolute; width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff, #ccc); left: 20px; top: 50%; transform: translateY(-50%); box-shadow: 0 0 8px rgba(0,0,0,.4); }
+  .pitch .ball.shoot { animation: shoot 1.6s cubic-bezier(.3,.6,.4,1) forwards; animation-delay: .3s; }
+  @keyframes shoot { to { left: var(--bx, 400px); top: var(--by, 50%); } }
 
   .s-card-or-sub .icon { font-size: 90px; margin-bottom: 30px; color: var(--gold); }
   .s-card-or-sub .player { font-size: 76px; font-weight: 800; margin-bottom: 18px; }
@@ -125,7 +128,7 @@
 </head>
 <body>
 <div id="stage"></div>
-<div class="brand"><div class="brand-dot"></div><div class="brand-text">موج فوتبال</div></div>
+<div class="brand"><img src="logo.png" alt="موج فوتبال"></div>
 
 <script>
 const SCENES = __SCENES_JSON__;
@@ -192,11 +195,26 @@ function renderScene(s) {
 
   else if (s.type === 'goal') {
     const e = s.event || {};
+    const yMap = {
+      'Low Left': 78, 'Low Centre': 82, 'Low Right': 78,
+      'High Left': 22, 'High Centre': 18, 'High Right': 22,
+      'Close Left': 45, 'Close Right': 45, 'Close High': 30,
+    };
+    const by = yMap[s.target] || 50;
     content.innerHTML = `
       <div class="goal-badge">● گل</div>
-      <div class="pitch"><div class="goalmouth"></div><div class="ball"></div></div>
+      <div class="pitch">
+        <div class="center-circle"></div>
+        <div class="penalty-box"></div>
+        <div class="goalmouth"></div>
+        <div class="ball" style="--bx:415px; --by:${by}%"></div>
+      </div>
       <div class="player">${e.player || ''}</div>
       <div class="meta">${e.team || ''} · دقیقه ${e.time || ''}${e.assist ? ' · پاس گل: ' + e.assist : ''}</div>`;
+    setTimeout(() => {
+      const ball = content.querySelector('.ball');
+      if (ball) ball.classList.add('shoot');
+    }, 50);
   }
 
   else if (s.type === 'card_or_sub') {
