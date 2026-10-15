@@ -1,60 +1,838 @@
+"""
+build_video.py  (نسخه‌ی Pillow + ffmpeg)
+بدون مرورگر؛ همه‌ی صحنه‌ها با Pillow ترسیم و فریم‌ها مستقیم به ffmpeg داده می‌شن.
+امضای تابع با نسخه‌ی قبلی یکیه:
+    build_video(summary, timeline, audio_path, out_dir) -> final.mp4
+"""
 import os
+import io
+import re
+import sys
 import json
-import shutil
+import math
+import glob
+import time
 import subprocess
 
+import requests
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import arabic_reshaper
+from bidi.algorithm import get_display
+
+import scene_builder
 from scene_builder import build_scenes
-from record_video import record
 
-TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "..", "templates", "video_template.html")
-LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "logo.png")
+# ---------------------------------------------------------------- تنظیمات
+W, H = 1280, 720
+FPS = 24
+MAX_SCENE_SECONDS = 6
+scene_builder.MAX_SCENE_SECONDS = MAX_SCENE_SECONDS
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+LOGO_PATH = os.path.join(HERE, "..", "assets", "logo.png")
+
+BG1 = (10, 14, 26)
+BG2 = (24, 33, 62)
+GOLD = (212, 175, 55)
+GOLD_SOFT = (232, 199, 102)
+HOME = (79, 143, 247)
+AWAY = (247, 95, 95)
+TEXT = (244, 241, 234)
+MUTED = (141, 147, 166)
+PANEL = (20, 27, 48)
+
+HUD_H = 78
 
 
-def render_page(scenes, out_path):
-    with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
-        tpl = f.read()
-    html = tpl.replace("__SCENES_JSON__", json.dumps(scenes, ensure_ascii=False))
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(html)
+# ---------------------------------------------------------------- متن فارسی
+_reshaper = arabic_reshaper.ArabicReshaper()
+_FA_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
-    out_dir = os.path.dirname(out_path)
-    if os.path.exists(LOGO_PATH):
-        shutil.copy(LOGO_PATH, os.path.join(out_dir, "logo.png"))
+
+def fa(text):
+    if text is None:
+        return ""
+    return get_display(_reshaper.reshape(str(text)))
+
+
+def fnum(x):
+    return str(x).translate(_FA_DIGITS)
+
+
+# ---------------------------------------------------------------- فونت
+_font_paths = None
+_font_cache = {}
+
+
+def _search_fonts():
+    patterns = [
+        os.path.join(HERE, "..", "fonts", "*.ttf"),
+        os.path.join(HERE, "..", "fonts", "*.otf"),
+        "/usr/share/fonts/**/*azirmatn*.ttf",
+        "/usr/share/fonts/**/*Vazir*.ttf",
+    ]
+    for p in patterns:
+        found = sorted(glob.glob(p, recursive=True))
+        if found:
+            return found
+    return []
+
+
+def _locate_fonts():
+    global _font_paths
+    if _font_paths:
+        return _font_paths
+    found = _search_fonts()
+    if not found:
+        try:
+            subprocess.run(["sudo", "-n", "apt-get", "update"], capture_output=True, timeout=180)
+            subprocess.run(["sudo", "-n", "apt-get", "install", "-y", "fonts-vazirmatn"],
+                           capture_output=True, timeout=300)
+        except Exception:
+            pass
+        found = _search_fonts()
+    if not found:
+        found = (sorted(glob.glob("/usr/share/fonts/**/DejaVuSans-Bold.ttf", recursive=True))
+                 + sorted(glob.glob("/usr/share/fonts/**/DejaVuSans.ttf", recursive=True)))
+    if not found:
+        raise RuntimeError("هیچ فونتی پیدا نشد. فایل Vazirmatn-Bold.ttf رو توی پوشه‌ی fonts/ ریپو بذار.")
+    _font_paths = found
+    print("فونت‌ها:", [os.path.basename(p) for p in found][:4])
+    return found
+
+
+def font(size, bold=True):
+    key = (int(size), bool(bold))
+    if key in _font_cache:
+        return _font_cache[key]
+    paths = _locate_fonts()
+    pick = None
+    want = "bold" if bold else "regular"
+    for p in paths:
+        if want in os.path.basename(p).lower():
+            pick = p
+            break
+    if pick is None:
+        pick = paths[0]
+    # layout BASIC چون خودمون فارسی رو reshape+bidi می‌کنیم
+    f = ImageFont.truetype(pick, int(size), layout_engine=ImageFont.Layout.BASIC)
+    try:
+        names = [n.decode() if isinstance(n, bytes) else n for n in f.get_variation_names()]
+        target = "Bold" if bold else "Regular"
+        if target in names:
+            f.set_variation_by_name(target)
+    except Exception:
+        pass
+    _font_cache[key] = f
+    return f
+
+
+# ---------------------------------------------------------------- ابزارهای ترسیم
+def clamp(v, lo=0.0, hi=1.0):
+    return max(lo, min(hi, v))
+
+
+def ease_out(p):
+    p = clamp(p)
+    return 1 - (1 - p) ** 3
+
+
+def ease_back(p):
+    p = clamp(p)
+    c1 = 1.70158
+    c3 = c1 + 1
+    return 1 + c3 * (p - 1) ** 3 + c1 * (p - 1) ** 2
+
+
+def new_layer():
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    return img, ImageDraw.Draw(img)
+
+
+def text(d, xy, s, size, fill=TEXT, bold=True, anchor="mm"):
+    d.text(xy, fa(s), font=font(size, bold), fill=fill, anchor=anchor)
+
+
+def fit_text(d, xy, s, size, maxw, fill=TEXT, bold=True, anchor="mm"):
+    shaped = fa(s)
+    sz = size
+    while sz > 14 and d.textlength(shaped, font=font(sz, bold)) > maxw:
+        sz -= 2
+    d.text(xy, shaped, font=font(sz, bold), fill=fill, anchor=anchor)
+
+
+def wrap_lines(d, s, size, maxw, bold=True, max_lines=4):
+    words = str(s).split()
+    lines, cur = [], ""
+    for w in words:
+        trial = (cur + " " + w).strip()
+        if d.textlength(fa(trial), font=font(size, bold)) <= maxw or not cur:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1] + " …"
+    return lines
+
+
+def rrect(d, box, r, fill=None, outline=None, width=1):
+    d.rounded_rectangle(box, radius=r, fill=fill, outline=outline, width=width)
+
+
+def parse_num(v):
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    m = re.search(r"-?\d+(?:\.\d+)?", str(v))
+    return float(m.group()) if m else None
+
+
+def parse_minute(t):
+    if t is None:
+        return 0
+    m = re.findall(r"\d+", str(t))
+    if not m:
+        return 0
+    return sum(int(x) for x in m[:2])
+
+
+def parse_score(score):
+    m = re.findall(r"\d+", str(score or ""))
+    if len(m) >= 2:
+        return m[0], m[1]
+    return None, None
+
+
+# ---------------------------------------------------------------- لوگوها
+_logo_cache = {}
+
+
+def _download(url):
+    for _ in range(3):
+        try:
+            r = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            return Image.open(io.BytesIO(r.content)).convert("RGBA")
+        except Exception:
+            time.sleep(1)
+    return None
+
+
+def badge(name, url, size):
+    """لوگوی تیم داخل دایره. اگه دانلود نشد، حروف اول اسم تیم (آیکن شکسته نداریم)."""
+    if url and url not in _logo_cache:
+        _logo_cache[url] = _download(url)
+    logo = _logo_cache.get(url) if url else None
+
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse((0, 0, size - 1, size - 1), fill=(255, 255, 255, 235))
+    d.ellipse((2, 2, size - 3, size - 3), outline=GOLD + (255,), width=max(2, size // 40))
+    if logo is not None:
+        inner = int(size * 0.68)
+        lg = logo.copy()
+        lg.thumbnail((inner, inner), Image.LANCZOS)
+        img.paste(lg, ((size - lg.width) // 2, (size - lg.height) // 2), lg)
+    else:
+        initials = "".join(w[0] for w in str(name or "?").split()[:2]).upper() or "?"
+        d.text((size / 2, size / 2), initials, font=font(size * 0.38), fill=BG1, anchor="mm")
+    return img
+
+
+_brand = {"img": None, "loaded": False}
+
+
+def brand(height):
+    if not _brand["loaded"]:
+        _brand["loaded"] = True
+        if os.path.exists(LOGO_PATH):
+            try:
+                _brand["img"] = Image.open(LOGO_PATH).convert("RGBA")
+            except Exception:
+                _brand["img"] = None
+    if _brand["img"] is None:
+        return None
+    lg = _brand["img"].copy()
+    ratio = height / lg.height
+    return lg.resize((max(1, int(lg.width * ratio)), height), Image.LANCZOS)
+
+
+def paste_center(layer, img, cx, cy):
+    layer.paste(img, (int(cx - img.width / 2), int(cy - img.height / 2)), img)
+
+
+# ---------------------------------------------------------------- پس‌زمینه و HUD
+def make_background():
+    grad = Image.radial_gradient("L").resize((int(W * 1.7), int(H * 2.0)))
+    grad = grad.point(lambda v: min(255, int(v * 1.35)))
+    left = int(W * 1.7 / 2 - W * 0.5)
+    top = int(H * 2.0 / 2 - H * 0.3)
+    mask = grad.crop((left, top, left + W, top + H))
+    bg = Image.composite(Image.new("RGB", (W, H), BG1), Image.new("RGB", (W, H), BG2), mask)
+
+    over = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    od = ImageDraw.Draw(over)
+    line = (255, 255, 255, 14)
+    od.ellipse((W / 2 - 170, H / 2 - 170, W / 2 + 170, H / 2 + 170), outline=line, width=3)
+    od.line((W / 2, 0, W / 2, H), fill=line, width=3)
+    od.rectangle((-3, H / 2 - 200, 220, H / 2 + 200), outline=line, width=3)
+    od.rectangle((W - 220, H / 2 - 200, W + 3, H / 2 + 200), outline=line, width=3)
+    bg = Image.alpha_composite(bg.convert("RGBA"), over).convert("RGB")
+    return bg
+
+
+def make_glow():
+    g = Image.new("RGBA", (640, 640), (0, 0, 0, 0))
+    ImageDraw.Draw(g).ellipse((120, 120, 520, 520), fill=GOLD + (42,))
+    return g.filter(ImageFilter.GaussianBlur(70))
+
+
+def make_hud(summary):
+    img, d = new_layer()
+    d.rectangle((0, 0, W, HUD_H), fill=(6, 9, 18, 215))
+    d.rectangle((0, HUD_H, W, HUD_H + 3), fill=GOLD + (255,))
+
+    home, away = summary.get("home_team"), summary.get("away_team")
+    hs, as_ = parse_score(summary.get("score"))
+
+    bsz = 54
+    cy = HUD_H // 2
+    ab = badge(away, summary.get("away_logo"), bsz)
+    hb = badge(home, summary.get("home_logo"), bsz)
+    img.paste(ab, (W // 2 - 300, cy - bsz // 2), ab)
+    img.paste(hb, (W // 2 + 300 - bsz, cy - bsz // 2), hb)
+    fit_text(d, (W // 2 - 220, cy), away, 26, 140, anchor="lm")
+    fit_text(d, (W // 2 + 220, cy), home, 26, 140, anchor="rm")
+    if hs is not None:
+        text(d, (W // 2 - 38, cy - 2), fnum(as_), 46, GOLD_SOFT)
+        text(d, (W // 2, cy - 4), ":", 40, MUTED)
+        text(d, (W // 2 + 38, cy - 2), fnum(hs), 46, GOLD_SOFT)
+
+    lg = brand(56)
+    if lg is not None:
+        img.paste(lg, (24, (HUD_H - lg.height) // 2), lg)
+    else:
+        text(d, (24, cy), "موج فوتبال", 28, GOLD, anchor="lm")
+    return img
+
+
+# ---------------------------------------------------------------- صحنه‌ها
+def header(d, s, y=128):
+    text(d, (W // 2, y), s, 46, GOLD_SOFT)
+    d.line((W // 2 - 70, y + 36, W // 2 + 70, y + 36), fill=GOLD + (255,), width=4)
+
+
+def target_xy(target, gx, gy, gw, gh):
+    t = str(target or "")
+    cx = 0.5
+    if "Left" in t:
+        cx = 0.2
+    elif "Right" in t:
+        cx = 0.8
+    cy = 0.5
+    if "Low" in t:
+        cy = 0.78
+    elif "High" in t:
+        cy = 0.22
+    if "Close" in t and "High" in t:
+        cy = 0.3
+    return gx + gw * cx, gy + gh * cy
+
+
+def draw_goal_frame(d, gx, gy, gw, gh, post=6, net=True):
+    if net:
+        step = max(14, gw // 20)
+        for x in range(gx, gx + gw + 1, step):
+            d.line((x, gy, x, gy + gh), fill=(255, 255, 255, 40), width=1)
+        for y in range(gy, gy + gh + 1, step):
+            d.line((gx, y, gx + gw, y), fill=(255, 255, 255, 40), width=1)
+    d.rectangle((gx - post, gy - post, gx + gw + post, gy), fill=(245, 245, 245, 255))
+    d.rectangle((gx - post, gy - post, gx, gy + gh), fill=(245, 245, 245, 255))
+    d.rectangle((gx + gw, gy - post, gx + gw + post, gy + gh), fill=(245, 245, 245, 255))
+
+
+def scene_title(s, summary):
+    base, d = new_layer()
+    text(d, (W // 2, 70), s.get("league") or "", 34, MUTED)
+    home, away = s["home_team"], s["away_team"]
+    hs, as_ = parse_score(s.get("score"))
+    big = 210
+    hb = badge(home, s.get("home_logo"), big)
+    ab = badge(away, s.get("away_logo"), big)
+    cy = 300
+    hx, ax = W - 230, 230
+
+    lg = brand(70)
+    if lg is not None:
+        base.paste(lg, ((W - lg.width) // 2, 105), lg)
+    text(d, (W // 2, 520), "تحلیل بعد از بازی", 34, GOLD_SOFT)
+    fit_text(d, (hx, 450), home, 42, 340)
+    fit_text(d, (ax, 450), away, 42, 340)
+    if s.get("venue"):
+        text(d, (W // 2, 640), s["venue"], 26, MUTED, bold=False)
+
+    def dyn(dd, img, lt, dur):
+        p = ease_back(lt / 0.7)
+        sz = max(10, int(big * p))
+        if sz > 10:
+            h2 = hb.resize((sz, sz), Image.LANCZOS)
+            a2 = ab.resize((sz, sz), Image.LANCZOS)
+            paste_center(img, h2, hx, cy)
+            paste_center(img, a2, ax, cy)
+        q = ease_out((lt - 0.5) / 0.6)
+        if q > 0 and hs is not None:
+            fs = int(120 * (0.6 + 0.4 * q))
+            dd.text((W // 2 - 70, cy), fnum(as_), font=font(fs), fill=GOLD_SOFT + (int(255 * q),), anchor="mm")
+            dd.text((W // 2, cy - 8), ":", font=font(100), fill=MUTED + (int(255 * q),), anchor="mm")
+            dd.text((W // 2 + 70, cy), fnum(hs), font=font(fs), fill=GOLD_SOFT + (int(255 * q),), anchor="mm")
+    return base, dyn
+
+
+def scene_goal(s, summary):
+    base, d = new_layer()
+    e = s.get("event") or {}
+    gw, gh = 560, 250
+    gx, gy = (W - gw) // 2, 255
+    draw_goal_frame(d, gx, gy, gw, gh)
+    d.rectangle((0, gy + gh + 2, W, gy + gh + 6), fill=(255, 255, 255, 60))
+    tx, ty = target_xy(s.get("target"), gx, gy, gw, gh)
+
+    fit_text(d, (W // 2, 600), e.get("player") or "گل!", 62, 1100)
+    meta = []
+    if e.get("team"):
+        meta.append(e["team"])
+    if e.get("time") is not None:
+        meta.append("دقیقه " + fnum(e["time"]))
+    if e.get("assist"):
+        meta.append("پاس گل: " + str(e["assist"]))
+    if meta:
+        fit_text(d, (W // 2, 660), "  ·  ".join(meta), 30, 1150, fill=MUTED, bold=False)
+
+    def dyn(dd, img, lt, dur):
+        p = ease_out((lt - 0.15) / 0.55)
+        bx = W // 2 + (tx - W // 2) * p
+        by = 560 + (ty - 560) * p
+        r = 34 - 18 * p
+        if lt > 0.15:
+            dd.ellipse((bx - r, by - r, bx + r, by + r), fill=(250, 250, 250, 255), outline=(30, 30, 30, 255), width=3)
+            dd.ellipse((bx - r * 0.35, by - r * 0.35, bx + r * 0.35, by + r * 0.35), fill=(40, 40, 40, 255))
+        if lt > 0.7:
+            q = clamp((lt - 0.7) / 0.9)
+            rr = 20 + 160 * ease_out(q)
+            dd.ellipse((tx - rr, ty - rr, tx + rr, ty + rr), outline=GOLD_SOFT + (int(220 * (1 - q)),), width=6)
+        g = ease_back((lt - 0.7) / 0.5)
+        if lt > 0.7:
+            dd.text((W // 2, 170), fa("گل!"), font=font(max(20, int(120 * g))), fill=GOLD + (255,), anchor="mm")
+    return base, dyn
+
+
+def scene_card_or_sub(s, summary):
+    base, d = new_layer()
+    e = s.get("event") or {}
+    is_card = e.get("type") == "Red Card"
+    color = AWAY if is_card else HOME
+    title = "کارت قرمز" if is_card else "تعویض"
+    text(d, (W // 2, 430), e.get("player") or "-", 66)
+    meta = []
+    if e.get("team"):
+        meta.append(e["team"])
+    if e.get("time") is not None:
+        meta.append("دقیقه " + fnum(e["time"]))
+    if meta:
+        fit_text(d, (W // 2, 505), "  ·  ".join(meta), 32, 1100, fill=MUTED, bold=False)
+    if not is_card and e.get("assist"):
+        fit_text(d, (W // 2, 565), "به‌جای " + str(e["assist"]), 32, 1100, fill=GOLD_SOFT, bold=False)
+
+    def dyn(dd, img, lt, dur):
+        p = ease_back(lt / 0.5)
+        sz = int(130 * p)
+        cx, cy = W // 2, 260
+        if sz > 4:
+            if is_card:
+                rrect(dd, (cx - sz * 0.42, cy - sz * 0.58, cx + sz * 0.42, cy + sz * 0.58), 12, fill=color + (255,))
+            else:
+                a = sz * 0.5
+                dd.polygon([(cx - a * 1.1, cy - a * 0.3), (cx - a * 0.1, cy - a * 0.3), (cx - a * 0.1, cy - a * 0.8),
+                            (cx + a * 0.6, cy - a * 0.1), (cx - a * 0.1, cy + a * 0.6), (cx - a * 0.1, cy + a * 0.1),
+                            (cx - a * 1.1, cy + a * 0.1)], fill=color + (255,))
+        dd.text((W // 2, 140 + (1 - ease_out(lt / 0.5)) * -30), fa(title), font=font(48), fill=color + (255,), anchor="mm")
+    return base, dyn
+
+
+def fmt_stat(v, fmt):
+    n = parse_num(v)
+    if n is None:
+        return "-"
+    if fmt == "percent":
+        return fnum(int(round(n))) + "٪"
+    if fmt == "decimal":
+        return fnum(f"{n:.2f}")
+    return fnum(int(round(n)))
+
+
+def scene_stat_bar(s, summary):
+    base, d = new_layer()
+    home, away = s["home_team"], s["away_team"]
+    hv, av = parse_num(s.get("home_value")), parse_num(s.get("away_value"))
+    fmt = s.get("format")
+    header(d, s.get("label") or "آمار")
+    hb = badge(home, summary.get("home_logo"), 110)
+    ab = badge(away, summary.get("away_logo"), 110)
+    paste_center(base, hb, W - 150, 300)
+    paste_center(base, ab, 150, 300)
+    fit_text(d, (W - 150, 392), home, 28, 240, fill=HOME)
+    fit_text(d, (150, 392), away, 28, 240, fill=AWAY)
+
+    tot = (hv or 0) + (av or 0)
+    ratio = 0.5 if tot <= 0 else (hv or 0) / tot
+    ratio = clamp(ratio, 0.1, 0.9)
+    x0, x1, y0, y1 = 120, W - 120, 470, 530
+
+    def dyn(dd, img, lt, dur):
+        p = ease_out(lt / 1.0)
+        rrect(dd, (x0, y0, x1, y1), 30, fill=(255, 255, 255, 25))
+        hx = x1 - (x1 - x0) * ratio * p
+        ax = x0 + (x1 - x0) * (1 - ratio) * p
+        if hx < x1:
+            rrect(dd, (hx, y0, x1, y1), 30, fill=HOME + (255,))
+        if ax > x0:
+            rrect(dd, (x0, y0, ax, y1), 30, fill=AWAY + (255,))
+        cv = lambda v: None if v is None else v * p
+        dd.text((x1 - 40, (y0 + y1) / 2), fa(fmt_stat(cv(hv), fmt)), font=font(44), fill=(255, 255, 255, 255), anchor="rm")
+        dd.text((x0 + 40, (y0 + y1) / 2), fa(fmt_stat(cv(av), fmt)), font=font(44), fill=(255, 255, 255, 255), anchor="lm")
+    return base, dyn
+
+
+def scene_shot_map(s, summary):
+    base, d = new_layer()
+    header(d, "نقشه‌ی شوت‌ها")
+    gw, gh = 400, 215
+    boxes = [(W - 80 - gw, 250, s.get("home_shots") or [], s["home_team"], HOME),
+             (80, 250, s.get("away_shots") or [], s["away_team"], AWAY)]
+    dots = []
+    for gx, gy, shots, name, color in boxes:
+        draw_goal_frame(d, gx, gy, gw, gh)
+        fit_text(d, (gx + gw / 2, gy + gh + 55), name, 34, 380, fill=color)
+        goals = sum(1 for sh in shots if sh.get("outcome") == "Goal")
+        text(d, (gx + gw / 2, gy + gh + 100), f"{fnum(len(shots))} شوت · {fnum(goals)} گل", 26, MUTED, bold=False)
+        for sh in shots:
+            x, y = target_xy(sh.get("goalTarget"), gx, gy, gw, gh)
+            dots.append((x, y, sh.get("outcome") == "Goal"))
+    d.ellipse((W // 2 - 190, 612, W // 2 - 170, 632), fill=GOLD + (255,))
+    text(d, (W // 2 - 155, 622), "گل", 24, TEXT, bold=False, anchor="lm")
+    d.ellipse((W // 2 + 40, 612, W // 2 + 60, 632), fill=(160, 175, 210, 255))
+    text(d, (W // 2 + 75, 622), "مهار شده", 24, TEXT, bold=False, anchor="lm")
+
+    n = max(1, len(dots))
+
+    def dyn(dd, img, lt, dur):
+        for i, (x, y, goal) in enumerate(dots):
+            p = ease_back((lt - 0.3 - i * (min(2.5, dur - 1) / n)) / 0.35)
+            if p <= 0:
+                continue
+            r = 15 * p
+            if goal:
+                dd.ellipse((x - r - 6, y - r - 6, x + r + 6, y + r + 6), outline=GOLD + (200,), width=3)
+                dd.ellipse((x - r, y - r, x + r, y + r), fill=GOLD + (255,))
+            else:
+                dd.ellipse((x - r, y - r, x + r, y + r), fill=(160, 175, 210, 235))
+    return base, dyn
+
+
+STAT_FA = {"Rating": "امتیاز", "Goals": "گل", "Assists": "پاس گل", "Shots": "شوت", "Passes": "پاس",
+           "Saves": "مهار", "Tackles": "تکل", "Minutes": "دقیقه", "Minutes played": "دقیقه"}
+
+
+def scene_player_card(s, summary):
+    base, d = new_layer()
+    p = s.get("player")
+    team = s.get("team")
+    header(d, "بازیکن برتر")
+    cx0, cx1, cy0, cy1 = 200, W - 200, 210, 640
+    rrect(d, (cx0, cy0, cx1, cy1), 36, fill=PANEL + (255,), outline=GOLD + (255,), width=3)
+    chips = []
+    if p:
+        fit_text(d, (W // 2, 285), p.get("name") or "-", 62, 780)
+        text(d, (W // 2, 355), f"{p.get('position') or ''} · {team or ''}".strip(" ·"), 30, MUTED, bold=False)
+        for k, v in list((p.get("stats") or {}).items())[:3]:
+            n = parse_num(v)
+            val = fnum(round(n, 2) if n is not None and n != int(n) else int(n)) if n is not None else str(v)
+            chips.append((val, STAT_FA.get(k, k)))
+    else:
+        text(d, (W // 2, 420), "-", 60)
+
+    def dyn(dd, img, lt, dur):
+        n = max(1, len(chips))
+        gap = (cx1 - cx0) / (n + 1)
+        for i, (val, label) in enumerate(chips):
+            q = ease_back((lt - 0.3 - i * 0.18) / 0.45)
+            if q <= 0:
+                continue
+            x = cx1 - gap * (i + 1)
+            w, h = 170 * q, 150 * q
+            rrect(dd, (x - w / 2, 490 - h / 2, x + w / 2, 490 + h / 2), 24, fill=(255, 255, 255, 22))
+            if q > 0.7:
+                dd.text((x, 470), fa(val), font=font(52), fill=GOLD_SOFT + (255,), anchor="mm")
+                dd.text((x, 525), fa(label), font=font(24, False), fill=MUTED + (255,), anchor="mm")
+    return base, dyn
+
+
+def scene_prediction(s, summary):
+    base, d = new_layer()
+    header(d, "پیش‌بینی قبل از بازی")
+    pr = s.get("prediction")
+    home, away = s["home_team"], s["away_team"]
+    hs, as_ = parse_score(s.get("score"))
+    vals = None
+    if pr:
+        h, dr, a = (parse_num(pr.get("home_pct")) or 0, parse_num(pr.get("draw_pct")) or 0, parse_num(pr.get("away_pct")) or 0)
+        tot = h + dr + a
+        if tot > 0:
+            vals = (h / tot, dr / tot, a / tot)
+    x0, x1, y0, y1 = 140, W - 140, 330, 410
+    if vals:
+        fit_text(d, (W - 140, 290), home, 30, 300, fill=HOME, anchor="rm")
+        fit_text(d, (140, 290), away, 30, 300, fill=AWAY, anchor="lm")
+        text(d, (W // 2, 290), "مساوی", 28, MUTED)
+    if hs is not None:
+        fit_text(d, (W // 2, 560), f"نتیجه‌ی نهایی:  {home}  {fnum(hs)} - {fnum(as_)}  {away}", 40, 1100, fill=TEXT)
+
+    def dyn(dd, img, lt, dur):
+        if vals:
+            p = ease_out(lt / 1.0)
+            wtot = (x1 - x0) * p
+            wh, wd, wa = wtot * vals[0], wtot * vals[1], wtot * vals[2]
+            segs = [(wh, HOME, vals[0]), (wd, (120, 126, 146), vals[1]), (wa, AWAY, vals[2])]
+            cur = x1
+            for w_, col, share in segs:
+                if w_ > 2:
+                    rrect(dd, (cur - w_, y0, cur, y1), 18, fill=col + (255,))
+                    if p > 0.8 and w_ > 90:
+                        dd.text((cur - w_ / 2, (y0 + y1) / 2), fa(fnum(int(round(share * 100))) + "٪"), font=font(38),
+                                fill=(255, 255, 255, 255), anchor="mm")
+                cur -= w_
+        if lt > 1.5 and hs is not None:
+            q = ease_out((lt - 1.5) / 0.5)
+            dd.rectangle((W // 2 - int(200 * q), 485, W // 2 + int(200 * q), 489), fill=GOLD + (255,))
+    return base, dyn
+
+
+def scene_news(s, summary):
+    base, d = new_layer()
+    h = s.get("headline")
+    if isinstance(h, dict):
+        for k in ("title", "headline", "text", "t", "name"):
+            if isinstance(h.get(k), str):
+                h = h[k]
+                break
+        else:
+            h = next((v for v in h.values() if isinstance(v, str)), None)
+    header(d, "تیتر خبر")
+    d.text((W - 150, 270), "”", font=font(220), fill=GOLD + (120,), anchor="mm")
+    if h:
+        lines = wrap_lines(d, h, 46, 900, max_lines=4)
+        y = 360 - (len(lines) - 1) * 35
+        for ln in lines:
+            text(d, (W // 2, y), ln, 46)
+            y += 70
+    return base, None
+
+
+def scene_momentum(s, summary):
+    base, d = new_layer()
+    header(d, "روند بازی")
+    events = [e for e in (s.get("events") or []) if e.get("type") in ("Goal", "Red Card", "Substitution")]
+    last = max([95] + [parse_minute(e.get("time")) for e in events])
+    x0, x1, y = 100, W - 100, 400
+    d.line((x0, y, x1, y), fill=(255, 255, 255, 70), width=6)
+    for m in range(0, int(last) + 1, 15):
+        x = x1 - (x1 - x0) * m / last
+        d.line((x, y - 12, x, y + 12), fill=(255, 255, 255, 120), width=3)
+        text(d, (x, y + 38), fnum(m), 22, MUTED, bold=False)
+    home, away = s.get("home_team"), s.get("away_team")
+
+    items = []
+    row = 0
+    for e in sorted(events, key=lambda e: parse_minute(e.get("time"))):
+        x = x1 - (x1 - x0) * parse_minute(e.get("time")) / last
+        col = HOME if e.get("team") == home else AWAY if e.get("team") == away else MUTED
+        up = (row % 2 == 0)
+        row += 1
+        items.append((x, e, col, up))
+
+    def dyn(dd, img, lt, dur):
+        prog = clamp((lt - 0.2) / max(0.5, dur * 0.7))
+        cur_x = x1 - (x1 - x0) * prog
+        dd.line((x1, y, cur_x, y), fill=GOLD + (255,), width=8)
+        dd.ellipse((cur_x - 9, y - 9, cur_x + 9, y + 9), fill=GOLD_SOFT + (255,))
+        for x, e, col, up in items:
+            if x < cur_x - 2:
+                continue
+            q = ease_back((prog - (x1 - x) / (x1 - x0)) / 0.08 if (x1 - x0) else 1)
+            r = 18 * clamp(q, 0, 1.2)
+            if r <= 1:
+                continue
+            kind = e.get("type")
+            if kind == "Goal":
+                dd.ellipse((x - r, y - r, x + r, y + r), fill=GOLD + (255,), outline=col + (255,), width=5)
+            elif kind == "Red Card":
+                dd.rectangle((x - r * .7, y - r, x + r * .7, y + r), fill=AWAY + (255,))
+            else:
+                a = r * 0.75
+                dd.polygon([(x, y - a), (x + a, y), (x, y + a), (x - a, y)], fill=col + (255,))
+            if q > 0.8 and kind in ("Goal", "Red Card"):
+                ty = y - 70 if up else y + 90
+                dd.line((x, y - r - 2 if up else y + r + 2, x, ty + (26 if up else -26)), fill=(255, 255, 255, 70), width=2)
+                dd.text((x, ty), fa(str(e.get("player") or "")), font=font(24), fill=TEXT + (255,), anchor="mm")
+                dd.text((x, ty + 28), fa(fnum(e.get("time")) + "'"), font=font(20, False), fill=MUTED + (255,), anchor="mm")
+    return base, dyn
+
+
+def scene_outro(s, summary):
+    base, d = new_layer()
+    home, away = s["home_team"], s["away_team"]
+    hs, as_ = parse_score(s.get("score"))
+    line = f"{home}  {fnum(hs)} - {fnum(as_)}  {away}" if hs is not None else f"{home} - {away}"
+    fit_text(d, (W // 2, 120), line, 54, 1150, fill=TEXT)
+    text(d, (W // 2, 520), "موج فوتبال", 96, GOLD)
+    text(d, (W // 2, 615), "سابسکرایب کنید تا تحلیل بازی بعدی رو از دست ندید", 34, TEXT, bold=False)
+    lg = brand(150)
+
+    def dyn(dd, img, lt, dur):
+        if lg is not None:
+            k = 1 + 0.04 * math.sin(lt * 3)
+            im2 = lg.resize((int(lg.width * k), int(lg.height * k)), Image.LANCZOS)
+            paste_center(img, im2, W // 2, 300)
+    return base, dyn
+
+
+SCENES = {
+    "title": scene_title, "goal": scene_goal, "card_or_sub": scene_card_or_sub, "stat_bar": scene_stat_bar,
+    "shot_map": scene_shot_map, "player_card": scene_player_card, "prediction": scene_prediction,
+    "news": scene_news, "momentum": scene_momentum, "outro": scene_outro,
+}
+NO_HUD = {"title", "outro"}
+
+
+# ---------------------------------------------------------------- رندر
+class Renderer:
+    def __init__(self, summary, scenes, total):
+        self.summary = summary
+        self.scenes = scenes
+        self.total = total
+        self.bg = make_background()
+        self.glow = make_glow()
+        self.hud = make_hud(summary)
+        self._cache_idx = None
+        self._cache = None
+
+    def _scene(self, idx):
+        if self._cache_idx != idx:
+            sc = self.scenes[idx]
+            fn = SCENES.get(sc.get("type"), scene_momentum)
+            self._cache = fn(sc, self.summary)
+            self._cache_idx = idx
+        return self._cache
+
+    def frame(self, t, idx=None, lt_override=None):
+        if idx is None:
+            idx = 0
+            for i, sc in enumerate(self.scenes):
+                if t >= sc["start"]:
+                    idx = i
+        sc = self.scenes[idx]
+        dur = max(0.2, sc["end"] - sc["start"])
+        lt = lt_override if lt_override is not None else clamp(t - sc["start"], 0, dur)
+
+        img = self.bg.copy()
+        gx = int(W * (0.5 + 0.38 * math.sin(t * 0.45)) - 320)
+        gy = int(H * (0.5 + 0.30 * math.cos(t * 0.31)) - 320)
+        img.paste(self.glow, (gx, gy), self.glow)
+
+        base, dyn = self._scene(idx)
+        layer = base.copy()
+        if dyn is not None:
+            dyn(ImageDraw.Draw(layer), layer, lt, dur)
+
+        z = 1 + 0.045 * (lt / dur)
+        if z > 1.001:
+            zw, zh = int(W * z), int(H * z)
+            big = layer.resize((zw, zh), Image.BILINEAR)
+            ox, oy = (zw - W) // 2, (zh - H) // 2
+            layer = big.crop((ox, oy, ox + W, oy + H))
+
+        a = min(1.0, lt / 0.35, (dur - lt) / 0.3 if dur > 0.6 else 1.0)
+        a = clamp(a)
+        if a < 0.999:
+            alpha = layer.getchannel("A").point(lambda v: int(v * a))
+            layer.putalpha(alpha)
+        img.paste(layer, (0, 0), layer)
+
+        if sc.get("type") not in NO_HUD:
+            img.paste(self.hud, (0, 0), self.hud)
+
+        d = ImageDraw.Draw(img)
+        d.rectangle((0, H - 6, int(W * clamp(t / self.total)), H), fill=GOLD)
+        return img
 
 
 def build_video(summary, timeline, audio_path, out_dir):
+    os.makedirs(out_dir, exist_ok=True)
     scenes = build_scenes(summary, timeline)
-    total_seconds = timeline[-1]["end"]
-
+    total = float(timeline[-1]["end"])
     with open(os.path.join(out_dir, "scenes.json"), "w", encoding="utf-8") as f:
         json.dump(scenes, f, ensure_ascii=False, indent=2)
 
-    page_path = os.path.join(out_dir, "page.html")
-    render_page(scenes, page_path)
+    r = Renderer(summary, scenes, total)
 
-    print(f"در حال ضبط ویدیو ({total_seconds:.1f} ثانیه)...")
-    raw_video_dir = os.path.join(out_dir, "video_raw")
-    video_path = record(os.path.abspath(page_path), total_seconds, raw_video_dir)
-    print(f"ضبط خام تموم شد: {video_path}")
+    try:
+        t_idx = next((i for i, sc in enumerate(scenes) if sc.get("type") == "title"), 0)
+        thumb = r.frame(scenes[t_idx]["start"], idx=t_idx,
+                        lt_override=min(1.4, scenes[t_idx]["end"] - scenes[t_idx]["start"]))
+        r._cache_idx = None
+        thumb.save(os.path.join(out_dir, "thumbnail.jpg"), quality=92)
+    except Exception as e:
+        print("تامبنیل ساخته نشد:", e)
 
     final_path = os.path.join(out_dir, "final.mp4")
-    print("در حال چسبوندن صدا با ffmpeg...")
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-i", video_path,
+    n_frames = int(total * FPS) + FPS // 2
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
         "-i", audio_path,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-        "-c:a", "aac",
-        "-shortest",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart",
         final_path,
-    ], check=True)
-
+    ]
+    print(f"رندر {n_frames} فریم ({total:.1f} ثانیه، {len(scenes)} صحنه)...")
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    t0 = time.time()
+    try:
+        for i in range(n_frames):
+            t = min(i / FPS, total)
+            proc.stdin.write(r.frame(t).tobytes())
+            if i % (FPS * 20) == 0:
+                print(f"  {i}/{n_frames}  ({time.time() - t0:.0f}s)")
+    except BrokenPipeError:
+        pass
+    finally:
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+    code = proc.wait()
+    if code != 0:
+        raise RuntimeError(f"ffmpeg با کد {code} تموم شد")
     print(f"ویدیوی نهایی ساخته شد: {final_path}")
     return final_path
 
 
 if __name__ == "__main__":
-    import sys
     from fetch_match_details import get_match_details
     from generate_analysis import summarize_match, generate_persian_script
     from generate_audio import synthesize_dialogue, build_scene_timeline
@@ -62,13 +840,12 @@ if __name__ == "__main__":
     match_id = int(sys.argv[1])
     out_dir = f"output/{match_id}"
     os.makedirs(out_dir, exist_ok=True)
-
     details = get_match_details(match_id)
     summary = summarize_match(details)
     turns = generate_persian_script(summary)
-
     audio_path = os.path.join(out_dir, "episode.wav")
     total_seconds = synthesize_dialogue(turns, audio_path)
     timeline = build_scene_timeline(turns, total_seconds)
-
+    with open(os.path.join(out_dir, "timing.json"), "w", encoding="utf-8") as f:
+        json.dump(timeline, f, ensure_ascii=False, indent=2)
     build_video(summary, timeline, audio_path, out_dir)
