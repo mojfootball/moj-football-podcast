@@ -1,11 +1,11 @@
 """
-build_video.py  (نسخه‌ی Pillow + ffmpeg)
+build_video.py (Pillow + ffmpeg)
 
-بدون مرورگر، بدون وابستگی لحظه‌ای به اینترنت برای فونت/طراحی.
-همه‌ی صحنه‌ها با Pillow ترسیم می‌شن و فریم‌ها مستقیم به ffmpeg داده می‌شن.
+- زمان‌بندی تصاویر از روی خود فایل صوتی (sync_tools)
+- پس‌زمینه‌ی شاد و رنگی، لوگوی موج فوتبال پایین سمت راست
+- اگه هماهنگی یا لوگو مشکل داشته باشه، ویدیو ساخته نمی‌شه
 
-امضای تابع اصلی با نسخه‌ی قبلی یکیه:
-    build_video(summary, timeline, audio_path, out_dir) -> final.mp4
+امضای تابع اصلی: build_video(summary, timeline, audio_path, out_dir) -> final.mp4
 """
 import os
 import io
@@ -15,34 +15,36 @@ import json
 import math
 import glob
 import time
+import bisect
 import subprocess
 
 import requests
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-import scene_builder
 from scene_builder import build_scenes
+import sync_tools
 
 # ---------------------------------------------------------------- تنظیمات
 W, H = 1280, 720
 FPS = 24
-MAX_SCENE_SECONDS = 6
-scene_builder.MAX_SCENE_SECONDS = MAX_SCENE_SECONDS
+FADE = 0.35
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LOGO_PATH = os.path.join(HERE, "..", "assets", "logo.png")
+ROOT = os.path.abspath(os.path.join(HERE, ".."))
+LOGO_NAME = "1784888812641.png"
 
-BG1 = (10, 14, 26)
-BG2 = (24, 33, 62)
-GOLD = (212, 175, 55)
-GOLD_SOFT = (232, 199, 102)
-HOME = (79, 143, 247)
-AWAY = (247, 95, 95)
-TEXT = (244, 241, 234)
-MUTED = (141, 147, 166)
-PANEL = (20, 27, 48)
+NAVY = (15, 23, 42)
+SKY = (14, 165, 233)
+VIOLET = (124, 58, 237)
+GOLD = (250, 204, 21)
+GOLD_SOFT = (253, 224, 71)
+HOME = (56, 189, 248)
+AWAY = (251, 113, 133)
+TEXT = (255, 255, 255)
+MUTED = (214, 224, 240)
+PANEL = (30, 41, 82)
 
 HUD_H = 78
 
@@ -117,7 +119,6 @@ def font(size, bold=True):
             break
     if pick is None:
         pick = paths[0]
-    # layout BASIC چون خودمون فارسی رو reshape+bidi می‌کنیم
     f = ImageFont.truetype(pick, int(size), layout_engine=ImageFont.Layout.BASIC)
     try:
         names = [n.decode() if isinstance(n, bytes) else n for n in f.get_variation_names()]
@@ -150,6 +151,12 @@ def ease_back(p):
 def new_layer():
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     return img, ImageDraw.Draw(img)
+
+
+def with_alpha(layer, a):
+    out = layer.copy()
+    out.putalpha(layer.getchannel("A").point(lambda v: int(v * a)))
+    return out
 
 
 def text(d, xy, s, size, fill=TEXT, bold=True, anchor="mm"):
@@ -227,14 +234,13 @@ def _download(url):
 
 
 def badge(name, url, size):
-    """لوگوی تیم داخل دایره. اگه دانلود نشد، حروف اول اسم تیم (آیکن شکسته نداریم)."""
     if url and url not in _logo_cache:
         _logo_cache[url] = _download(url)
     logo = _logo_cache.get(url) if url else None
 
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.ellipse((0, 0, size - 1, size - 1), fill=(255, 255, 255, 235))
+    d.ellipse((0, 0, size - 1, size - 1), fill=(255, 255, 255, 240))
     d.ellipse((2, 2, size - 3, size - 3), outline=GOLD + (255,), width=max(2, size // 40))
     if logo is not None:
         inner = int(size * 0.68)
@@ -243,23 +249,29 @@ def badge(name, url, size):
         img.paste(lg, ((size - lg.width) // 2, (size - lg.height) // 2), lg)
     else:
         initials = "".join(w[0] for w in str(name or "?").split()[:2]).upper() or "?"
-        d.text((size / 2, size / 2), initials, font=font(size * 0.38), fill=BG1, anchor="mm")
+        d.text((size / 2, size / 2), initials, font=font(size * 0.38), fill=NAVY, anchor="mm")
     return img
 
 
-_brand = {"img": None, "loaded": False}
+def find_logo():
+    hits = glob.glob(os.path.join(ROOT, "**", LOGO_NAME), recursive=True)
+    if hits:
+        return hits[0]
+    for alt in ("assets/logo.png", "logo.png"):
+        p = os.path.join(ROOT, alt)
+        if os.path.exists(p):
+            return p
+    raise RuntimeError(f"لوگوی {LOGO_NAME} توی ریپو پیدا نشد؛ ویدیو ساخته نشد.")
+
+
+_brand = {"img": None}
 
 
 def brand(height):
-    if not _brand["loaded"]:
-        _brand["loaded"] = True
-        if os.path.exists(LOGO_PATH):
-            try:
-                _brand["img"] = Image.open(LOGO_PATH).convert("RGBA")
-            except Exception:
-                _brand["img"] = None
     if _brand["img"] is None:
-        return None
+        path = find_logo()
+        print("لوگو پیدا شد:", os.path.relpath(path, ROOT))
+        _brand["img"] = Image.open(path).convert("RGBA")
     lg = _brand["img"].copy()
     ratio = height / lg.height
     return lg.resize((max(1, int(lg.width * ratio)), height), Image.LANCZOS)
@@ -269,45 +281,64 @@ def paste_center(layer, img, cx, cy):
     layer.paste(img, (int(cx - img.width / 2), int(cy - img.height / 2)), img)
 
 
-# ---------------------------------------------------------------- پس‌زمینه و HUD
+# ---------------------------------------------------------------- پس‌زمینه‌ی شاد
 def make_background():
-    grad = Image.radial_gradient("L").resize((int(W * 1.7), int(H * 2.0)))
-    grad = grad.point(lambda v: min(255, int(v * 1.35)))
-    left = int(W * 1.7 / 2 - W * 0.5)
-    top = int(H * 2.0 / 2 - H * 0.3)
-    mask = grad.crop((left, top, left + W, top + H))
-    bg = Image.composite(Image.new("RGB", (W, H), BG1), Image.new("RGB", (W, H), BG2), mask)
+    v = Image.linear_gradient("L").resize((W, H))
+    h = Image.linear_gradient("L").rotate(90).resize((W, H))
+    mask = ImageChops.add(v, h, scale=2)
+    c1 = Image.new("RGB", (W, H), SKY)
+    c2 = Image.new("RGB", (W, H), VIOLET)
+    bg = Image.composite(c2, c1, mask)
 
     over = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     od = ImageDraw.Draw(over)
-    line = (255, 255, 255, 14)
+    line = (255, 255, 255, 34)
     od.ellipse((W / 2 - 170, H / 2 - 170, W / 2 + 170, H / 2 + 170), outline=line, width=3)
     od.line((W / 2, 0, W / 2, H), fill=line, width=3)
     od.rectangle((-3, H / 2 - 200, 220, H / 2 + 200), outline=line, width=3)
     od.rectangle((W - 220, H / 2 - 200, W + 3, H / 2 + 200), outline=line, width=3)
-    bg = Image.alpha_composite(bg.convert("RGBA"), over).convert("RGB")
-    return bg
+    return Image.alpha_composite(bg.convert("RGBA"), over).convert("RGB")
 
 
-def make_mark():
-    """لوگوی موج فوتبال، گوشه‌ی پایین سمت راست."""
-    lg = brand(64)
-    if lg is None:
-        return None
-    img, _ = new_layer()
-    img.paste(lg, (W - lg.width - 24, H - lg.height - 22), lg)
+def make_blob(color, alpha, size=700, blur=90):
+    g = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    pad = size // 5
+    ImageDraw.Draw(g).ellipse((pad, pad, size - pad, size - pad), fill=color + (alpha,))
+    return g.filter(ImageFilter.GaussianBlur(blur))
+
+
+def make_blobs():
+    return [
+        (make_blob((34, 211, 238), 120), 0.45, 0.31, 0.0),
+        (make_blob((251, 191, 36), 105), 0.33, 0.52, 2.1),
+        (make_blob((244, 114, 182), 105), 0.27, 0.41, 4.2),
+    ]
+
+
+def make_panel(full):
+    img, d = new_layer()
+    top = 28 if full else HUD_H + 20
+    bottom = H - 28 if full else H - 26
+    rrect(d, (28, top, W - 28, bottom), 36, fill=NAVY + (120,), outline=(255, 255, 255, 70), width=2)
     return img
 
 
-def make_glow():
-    g = Image.new("RGBA", (640, 640), (0, 0, 0, 0))
-    ImageDraw.Draw(g).ellipse((120, 120, 520, 520), fill=GOLD + (42,))
-    return g.filter(ImageFilter.GaussianBlur(70))
+def make_mark():
+    """لوگوی موج فوتبال، پایین سمت راست."""
+    lg = brand(84)
+    pad = 8
+    chip = Image.new("RGBA", (lg.width + 2 * pad, lg.height + 2 * pad), (0, 0, 0, 0))
+    ImageDraw.Draw(chip).rounded_rectangle((0, 0, chip.width - 1, chip.height - 1), radius=18,
+                                           fill=(255, 255, 255, 235))
+    chip.paste(lg, (pad, pad), lg)
+    img, _ = new_layer()
+    img.paste(chip, (W - chip.width - 22, H - chip.height - 20), chip)
+    return img
 
 
 def make_hud(summary):
     img, d = new_layer()
-    d.rectangle((0, 0, W, HUD_H), fill=(6, 9, 18, 215))
+    d.rectangle((0, 0, W, HUD_H), fill=NAVY + (235,))
     d.rectangle((0, HUD_H, W, HUD_H + 3), fill=GOLD + (255,))
 
     home, away = summary.get("home_team"), summary.get("away_team")
@@ -368,7 +399,7 @@ def draw_goal_frame(d, gx, gy, gw, gh, post=6, net=True):
 
 def scene_title(s, summary):
     base, d = new_layer()
-    text(d, (W // 2, 70), s.get("league") or "", 34, MUTED)
+    text(d, (W // 2, 80), s.get("league") or "", 36, MUTED)
     home, away = s["home_team"], s["away_team"]
     hs, as_ = parse_score(s.get("score"))
     big = 210
@@ -377,14 +408,11 @@ def scene_title(s, summary):
     cy = 300
     hx, ax = W - 230, 230
 
-    lg = brand(70)
-    if lg is not None:
-        base.paste(lg, ((W - lg.width) // 2, 105), lg)
-    text(d, (W // 2, 520), "تحلیل بعد از بازی", 34, GOLD_SOFT)
+    text(d, (W // 2, 520), "تحلیل بعد از بازی", 40, GOLD_SOFT)
     fit_text(d, (hx, 450), home, 42, 340)
     fit_text(d, (ax, 450), away, 42, 340)
     if s.get("venue"):
-        text(d, (W // 2, 640), s["venue"], 26, MUTED, bold=False)
+        text(d, (W // 2, 620), s["venue"], 26, MUTED, bold=False)
 
     def dyn(dd, img, lt, dur):
         p = ease_back(lt / 0.7)
@@ -397,9 +425,9 @@ def scene_title(s, summary):
         q = ease_out((lt - 0.5) / 0.6)
         if q > 0 and hs is not None:
             fs = int(120 * (0.6 + 0.4 * q))
-            dd.text((W // 2 - 70, cy), fnum(as_), font=font(fs), fill=GOLD_SOFT + (int(255 * q),), anchor="mm")
+            dd.text((W // 2 - 70, cy), fa(fnum(as_)), font=font(fs), fill=GOLD_SOFT + (int(255 * q),), anchor="mm")
             dd.text((W // 2, cy - 8), ":", font=font(100), fill=MUTED + (int(255 * q),), anchor="mm")
-            dd.text((W // 2 + 70, cy), fnum(hs), font=font(fs), fill=GOLD_SOFT + (int(255 * q),), anchor="mm")
+            dd.text((W // 2 + 70, cy), fa(fnum(hs)), font=font(fs), fill=GOLD_SOFT + (int(255 * q),), anchor="mm")
     return base, dyn
 
 
@@ -421,7 +449,7 @@ def scene_goal(s, summary):
     if e.get("assist"):
         meta.append("پاس گل: " + str(e["assist"]))
     if meta:
-        fit_text(d, (W // 2, 660), "  ·  ".join(meta), 30, 1150, fill=MUTED, bold=False)
+        fit_text(d, (W // 2, 660), "  ·  ".join(meta), 30, 1000, fill=MUTED, bold=False)
 
     def dyn(dd, img, lt, dur):
         p = ease_out((lt - 0.15) / 0.55)
@@ -505,7 +533,7 @@ def scene_stat_bar(s, summary):
 
     def dyn(dd, img, lt, dur):
         p = ease_out(lt / 1.0)
-        rrect(dd, (x0, y0, x1, y1), 30, fill=(255, 255, 255, 25))
+        rrect(dd, (x0, y0, x1, y1), 30, fill=(255, 255, 255, 30))
         hx = x1 - (x1 - x0) * ratio * p
         ax = x0 + (x1 - x0) * (1 - ratio) * p
         if hx < x1:
@@ -535,14 +563,14 @@ def scene_shot_map(s, summary):
             dots.append((x, y, sh.get("outcome") == "Goal"))
     d.ellipse((W // 2 - 190, 612, W // 2 - 170, 632), fill=GOLD + (255,))
     text(d, (W // 2 - 155, 622), "گل", 24, TEXT, bold=False, anchor="lm")
-    d.ellipse((W // 2 + 40, 612, W // 2 + 60, 632), fill=(160, 175, 210, 255))
+    d.ellipse((W // 2 + 40, 612, W // 2 + 60, 632), fill=(190, 205, 235, 255))
     text(d, (W // 2 + 75, 622), "مهار شده", 24, TEXT, bold=False, anchor="lm")
 
     n = max(1, len(dots))
 
     def dyn(dd, img, lt, dur):
         for i, (x, y, goal) in enumerate(dots):
-            p = ease_back((lt - 0.3 - i * (min(2.5, dur - 1) / n)) / 0.35)
+            p = ease_back((lt - 0.3 - i * (min(2.5, max(0.5, dur - 1)) / n)) / 0.35)
             if p <= 0:
                 continue
             r = 15 * p
@@ -550,7 +578,7 @@ def scene_shot_map(s, summary):
                 dd.ellipse((x - r - 6, y - r - 6, x + r + 6, y + r + 6), outline=GOLD + (200,), width=3)
                 dd.ellipse((x - r, y - r, x + r, y + r), fill=GOLD + (255,))
             else:
-                dd.ellipse((x - r, y - r, x + r, y + r), fill=(160, 175, 210, 235))
+                dd.ellipse((x - r, y - r, x + r, y + r), fill=(190, 205, 235, 235))
     return base, dyn
 
 
@@ -585,7 +613,7 @@ def scene_player_card(s, summary):
                 continue
             x = cx1 - gap * (i + 1)
             w, h = 170 * q, 150 * q
-            rrect(dd, (x - w / 2, 490 - h / 2, x + w / 2, 490 + h / 2), 24, fill=(255, 255, 255, 22))
+            rrect(dd, (x - w / 2, 490 - h / 2, x + w / 2, 490 + h / 2), 24, fill=(255, 255, 255, 30))
             if q > 0.7:
                 dd.text((x, 470), fa(val), font=font(52), fill=GOLD_SOFT + (255,), anchor="mm")
                 dd.text((x, 525), fa(label), font=font(24, False), fill=MUTED + (255,), anchor="mm")
@@ -610,14 +638,14 @@ def scene_prediction(s, summary):
         fit_text(d, (140, 290), away, 30, 300, fill=AWAY, anchor="lm")
         text(d, (W // 2, 290), "مساوی", 28, MUTED)
     if hs is not None:
-        fit_text(d, (W // 2, 560), f"نتیجه‌ی نهایی:  {home}  {fnum(hs)} - {fnum(as_)}  {away}", 40, 1100, fill=TEXT)
+        fit_text(d, (W // 2, 560), f"نتیجه‌ی نهایی:  {home}  {fnum(hs)} - {fnum(as_)}  {away}", 40, 1000, fill=TEXT)
 
     def dyn(dd, img, lt, dur):
         if vals:
             p = ease_out(lt / 1.0)
             wtot = (x1 - x0) * p
             wh, wd, wa = wtot * vals[0], wtot * vals[1], wtot * vals[2]
-            segs = [(wh, HOME, vals[0]), (wd, (120, 126, 146), vals[1]), (wa, AWAY, vals[2])]
+            segs = [(wh, HOME, vals[0]), (wd, (140, 148, 170), vals[1]), (wa, AWAY, vals[2])]
             cur = x1
             for w_, col, share in segs:
                 if w_ > 2:
@@ -659,10 +687,10 @@ def scene_momentum(s, summary):
     events = [e for e in (s.get("events") or []) if e.get("type") in ("Goal", "Red Card", "Substitution")]
     last = max([95] + [parse_minute(e.get("time")) for e in events])
     x0, x1, y = 100, W - 100, 400
-    d.line((x0, y, x1, y), fill=(255, 255, 255, 70), width=6)
+    d.line((x0, y, x1, y), fill=(255, 255, 255, 90), width=6)
     for m in range(0, int(last) + 1, 15):
         x = x1 - (x1 - x0) * m / last
-        d.line((x, y - 12, x, y + 12), fill=(255, 255, 255, 120), width=3)
+        d.line((x, y - 12, x, y + 12), fill=(255, 255, 255, 140), width=3)
         text(d, (x, y + 38), fnum(m), 22, MUTED, bold=False)
     home, away = s.get("home_team"), s.get("away_team")
 
@@ -676,7 +704,7 @@ def scene_momentum(s, summary):
         items.append((x, e, col, up))
 
     def dyn(dd, img, lt, dur):
-        prog = clamp((lt - 0.2) / max(0.5, dur * 0.7))
+        prog = clamp((lt - 0.2) / max(0.5, min(dur, 10.0) * 0.7))
         cur_x = x1 - (x1 - x0) * prog
         dd.line((x1, y, cur_x, y), fill=GOLD + (255,), width=8)
         dd.ellipse((cur_x - 9, y - 9, cur_x + 9, y + 9), fill=GOLD_SOFT + (255,))
@@ -697,7 +725,7 @@ def scene_momentum(s, summary):
                 dd.polygon([(x, y - a), (x + a, y), (x, y + a), (x - a, y)], fill=col + (255,))
             if q > 0.8 and kind in ("Goal", "Red Card"):
                 ty = y - 70 if up else y + 90
-                dd.line((x, y - r - 2 if up else y + r + 2, x, ty + (26 if up else -26)), fill=(255, 255, 255, 70), width=2)
+                dd.line((x, y - r - 2 if up else y + r + 2, x, ty + (26 if up else -26)), fill=(255, 255, 255, 90), width=2)
                 dd.text((x, ty), fa(str(e.get("player") or "")), font=font(24), fill=TEXT + (255,), anchor="mm")
                 dd.text((x, ty + 28), fa(fnum(e.get("time")) + "'"), font=font(20, False), fill=MUTED + (255,), anchor="mm")
     return base, dyn
@@ -714,10 +742,9 @@ def scene_outro(s, summary):
     lg = brand(150)
 
     def dyn(dd, img, lt, dur):
-        if lg is not None:
-            k = 1 + 0.04 * math.sin(lt * 3)
-            im2 = lg.resize((int(lg.width * k), int(lg.height * k)), Image.LANCZOS)
-            paste_center(img, im2, W // 2, 300)
+        k = 1 + 0.04 * math.sin(lt * 3)
+        im2 = lg.resize((int(lg.width * k), int(lg.height * k)), Image.LANCZOS)
+        paste_center(img, im2, W // 2, 300)
     return base, dyn
 
 
@@ -725,9 +752,9 @@ def draw_pitch(d, x0, y0, x1, y1):
     w, h = x1 - x0, y1 - y0
     stripes = 10
     for i in range(stripes):
-        col = (34, 94, 56) if i % 2 == 0 else (38, 102, 61)
+        col = (34, 150, 80) if i % 2 == 0 else (40, 164, 90)
         d.rectangle((x0 + w * i / stripes, y0, x0 + w * (i + 1) / stripes, y1), fill=col + (255,))
-    ln = (255, 255, 255, 190)
+    ln = (255, 255, 255, 210)
     d.rectangle((x0, y0, x1, y1), outline=ln, width=3)
     d.line((x0 + w / 2, y0, x0 + w / 2, y1), fill=ln, width=3)
     cr = h * 0.135
@@ -746,13 +773,12 @@ def draw_pitch(d, x0, y0, x1, y1):
 
 
 def scene_goal_pitch(s, summary):
-    """مسیر گل روی زمین. فقط چیزی که در داده هست: گلزن، پاس‌دهنده، دقیقه. موقعیت دقیق بازیکنان شماتیکه."""
     base, d = new_layer()
     e = s.get("event") or {}
     home = s.get("home_team")
     is_home = e.get("team") == home
     color = HOME if is_home else AWAY
-    x0, y0, x1, y1 = 200, 105, W - 200, 625
+    x0, y0, x1, y1 = 200, 105, W - 200, 615
     draw_pitch(d, x0, y0, x1, y1)
     w, h = x1 - x0, y1 - y0
     direction = 1 if is_home else -1
@@ -768,8 +794,8 @@ def scene_goal_pitch(s, summary):
         meta.append("دقیقه " + fnum(e["time"]))
     if e.get("team"):
         meta.append(e["team"])
-    fit_text(d, (W // 2, 662), f"{e.get('player') or ''}  ·  " + "  ·  ".join(meta), 34, 1150)
-    text(d, (W // 2, 700), "نمای شماتیک؛ مسیر گل بر اساس گلزن و پاس‌دهنده", 20, MUTED, bold=False)
+    fit_text(d, (W // 2, 650), f"{e.get('player') or ''}  ·  " + "  ·  ".join(meta), 34, 900)
+    text(d, (W // 2, 690), "نمای شماتیک؛ مسیر گل بر اساس گلزن و پاس‌دهنده", 20, MUTED, bold=False)
 
     def lerp(a, b, t):
         return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
@@ -847,7 +873,7 @@ def scene_compare(s, summary):
             tot = hv + av
             ratio = 0.5 if tot <= 0 else clamp(hv / tot, 0.08, 0.92)
             y = top + i * step
-            rrect(dd, (x0, y - 4, x1, y + 28), 16, fill=(255, 255, 255, 22))
+            rrect(dd, (x0, y - 4, x1, y + 28), 16, fill=(255, 255, 255, 30))
             hx = x1 - (x1 - x0) * ratio * p
             ax = x0 + (x1 - x0) * (1 - ratio) * p
             if hx < x1 - 4:
@@ -866,7 +892,7 @@ SCENES = {
     "goal_pitch": scene_goal_pitch, "compare": scene_compare,
 }
 NO_HUD = {"title", "outro"}
-NO_MARK = {"title", "outro"}
+NO_MARK = {"outro"}
 
 
 # ---------------------------------------------------------------- رندر
@@ -875,59 +901,71 @@ class Renderer:
         self.summary = summary
         self.scenes = scenes
         self.total = total
+        self.starts = [sc["start"] for sc in scenes]
         self.bg = make_background()
-        self.glow = make_glow()
+        self.blobs = make_blobs()
+        self.panel_hud = make_panel(False)
+        self.panel_full = make_panel(True)
         self.hud = make_hud(summary)
         self.mark = make_mark()
-        self._cache_idx = None
-        self._cache = None
+        self._cache = {}
 
     def _scene(self, idx):
-        if self._cache_idx != idx:
+        if idx not in self._cache:
             sc = self.scenes[idx]
-            fn = SCENES.get(sc.get("type"), scene_momentum)
-            self._cache = fn(sc, self.summary)
-            self._cache_idx = idx
-        return self._cache
+            fn = SCENES.get(sc.get("type"))
+            if fn is None:
+                raise RuntimeError(f"نوع صحنه ناشناخته: {sc.get('type')}")
+            self._cache[idx] = fn(sc, self.summary)
+            for k in [k for k in self._cache if k < idx - 2]:
+                del self._cache[k]
+        return self._cache[idx]
 
-    def frame(self, t, idx=None, lt_override=None):
-        if idx is None:
-            idx = 0
-            for i, sc in enumerate(self.scenes):
-                if t >= sc["start"]:
-                    idx = i
+    def _render_scene(self, idx, lt):
         sc = self.scenes[idx]
         dur = max(0.2, sc["end"] - sc["start"])
-        lt = lt_override if lt_override is not None else clamp(t - sc["start"], 0, dur)
-
-        img = self.bg.copy()
-        gx = int(W * (0.5 + 0.38 * math.sin(t * 0.45)) - 320)
-        gy = int(H * (0.5 + 0.30 * math.cos(t * 0.31)) - 320)
-        img.paste(self.glow, (gx, gy), self.glow)
-
         base, dyn = self._scene(idx)
         layer = base.copy()
         if dyn is not None:
             dyn(ImageDraw.Draw(layer), layer, lt, dur)
-
-        z = 1 + 0.045 * (lt / dur)
+        z = 1 + 0.04 * clamp(lt / min(dur, 10.0))
         if z > 1.001:
             zw, zh = int(W * z), int(H * z)
             big = layer.resize((zw, zh), Image.BILINEAR)
             ox, oy = (zw - W) // 2, (zh - H) // 2
             layer = big.crop((ox, oy, ox + W, oy + H))
+        return layer
 
-        a = min(1.0, lt / 0.35, (dur - lt) / 0.3 if dur > 0.6 else 1.0)
-        a = clamp(a)
-        if a < 0.999:
-            alpha = layer.getchannel("A").point(lambda v: int(v * a))
-            layer.putalpha(alpha)
+    def frame(self, t, idx=None, lt=None):
+        if idx is None:
+            idx = max(0, bisect.bisect_right(self.starts, t) - 1)
+        sc = self.scenes[idx]
+        dur = max(0.2, sc["end"] - sc["start"])
+        if lt is None:
+            lt = clamp(t - sc["start"], 0, dur)
+
+        img = self.bg.copy()
+        for spr, fx, fy, ph in self.blobs:
+            sx = int(W * (0.5 + 0.45 * math.sin(t * fx + ph)) - spr.width / 2)
+            sy = int(H * (0.5 + 0.40 * math.cos(t * fy + ph)) - spr.height / 2)
+            img.paste(spr, (sx, sy), spr)
+
+        panel = self.panel_full if sc["type"] in NO_HUD else self.panel_hud
+        img.paste(panel, (0, 0), panel)
+
+        layer = self._render_scene(idx, lt)
+        if lt < FADE:
+            p = lt / FADE
+            if idx > 0:
+                prev_dur = max(0.2, self.scenes[idx - 1]["end"] - self.scenes[idx - 1]["start"])
+                prev = with_alpha(self._render_scene(idx - 1, prev_dur), 1 - p)
+                img.paste(prev, (0, 0), prev)
+            layer = with_alpha(layer, p)
         img.paste(layer, (0, 0), layer)
 
         if sc.get("type") not in NO_HUD:
             img.paste(self.hud, (0, 0), self.hud)
-
-        if self.mark is not None and sc.get("type") not in NO_MARK:
+        if sc.get("type") not in NO_MARK:
             img.paste(self.mark, (0, 0), self.mark)
 
         d = ImageDraw.Draw(img)
@@ -937,8 +975,12 @@ class Renderer:
 
 def build_video(summary, timeline, audio_path, out_dir):
     os.makedirs(out_dir, exist_ok=True)
-    scenes = build_scenes(summary, timeline)
-    total = float(timeline[-1]["end"])
+
+    find_logo()  # اگه لوگو نبود همین‌جا متوقف می‌شه
+    summary = sync_tools.prepare_summary(summary)
+    segments = sync_tools.build_segments(summary, timeline, audio_path, out_dir)
+    scenes = build_scenes(summary, segments)
+    total = float(segments[-1]["end"])
     with open(os.path.join(out_dir, "scenes.json"), "w", encoding="utf-8") as f:
         json.dump(scenes, f, ensure_ascii=False, indent=2)
 
@@ -946,9 +988,8 @@ def build_video(summary, timeline, audio_path, out_dir):
 
     try:
         t_idx = next((i for i, sc in enumerate(scenes) if sc.get("type") == "title"), 0)
-        thumb = r.frame(scenes[t_idx]["start"], idx=t_idx,
-                        lt_override=min(1.4, scenes[t_idx]["end"] - scenes[t_idx]["start"]))
-        r._cache_idx = None
+        sc0 = scenes[t_idx]
+        thumb = r.frame(sc0["start"], idx=t_idx, lt=min(1.4, sc0["end"] - sc0["start"]))
         thumb.save(os.path.join(out_dir, "thumbnail.jpg"), quality=92)
     except Exception as e:
         print("تامبنیل ساخته نشد:", e)
