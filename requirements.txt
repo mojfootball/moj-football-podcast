@@ -1,1 +1,6 @@
+requests
 faster-whisper
+moviepy
+pillow
+gtts
+
