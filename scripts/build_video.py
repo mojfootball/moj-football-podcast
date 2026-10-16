@@ -2,10 +2,8 @@
 build_video.py (Pillow + ffmpeg)
 
 - زمان‌بندی تصاویر از روی خود فایل صوتی (sync_tools)
-- پس‌زمینه‌ی شاد و رنگی، لوگوی موج فوتبال پایین سمت راست
-- اگه هماهنگی یا لوگو مشکل داشته باشه، ویدیو ساخته نمی‌شه
-
-امضای تابع اصلی: build_video(summary, timeline, audio_path, out_dir) -> final.mp4
+- پس‌زمینه‌ی شاد و رنگی، لوگوی موج فوتبال پایین سمت راست (بدون پس‌زمینه سفید)
+- اصلاح فرمت نمایش درصد آمار (رفع مشکل مالکیت 1 درصدی)
 """
 import os
 import io
@@ -102,7 +100,6 @@ def _locate_fonts():
     if not found:
         raise RuntimeError("هیچ فونتی پیدا نشد. فایل Vazirmatn-Bold.ttf رو توی پوشه‌ی fonts/ ریپو بذار.")
     _font_paths = found
-    print("فونت‌ها:", [os.path.basename(p) for p in found][:4])
     return found
 
 
@@ -270,7 +267,6 @@ _brand = {"img": None}
 def brand(height):
     if _brand["img"] is None:
         path = find_logo()
-        print("لوگو پیدا شد:", os.path.relpath(path, ROOT))
         _brand["img"] = Image.open(path).convert("RGBA")
     lg = _brand["img"].copy()
     ratio = height / lg.height
@@ -324,15 +320,11 @@ def make_panel(full):
 
 
 def make_mark():
-    """لوگوی موج فوتبال، پایین سمت راست."""
+    """لوگوی موج فوتبال، پایین سمت راست (بدون پس‌زمینه سفید اضافی)."""
     lg = brand(84)
-    pad = 8
-    chip = Image.new("RGBA", (lg.width + 2 * pad, lg.height + 2 * pad), (0, 0, 0, 0))
-    ImageDraw.Draw(chip).rounded_rectangle((0, 0, chip.width - 1, chip.height - 1), radius=18,
-                                           fill=(255, 255, 255, 235))
-    chip.paste(lg, (pad, pad), lg)
     img, _ = new_layer()
-    img.paste(chip, (W - chip.width - 22, H - chip.height - 20), chip)
+    # درج مستقیم بدون باکس سفیدرنگ پشت آن
+    img.paste(lg, (W - lg.width - 24, H - lg.height - 20), lg)
     return img
 
 
@@ -507,6 +499,9 @@ def fmt_stat(v, fmt):
     if n is None:
         return "-"
     if fmt == "percent":
+        # اصلاح مقادیر اعشاری مثل 0.6 به 60 درصد واقعی
+        if 0 < n <= 1.0:
+            n = n * 100
         return fnum(int(round(n))) + "٪"
     if fmt == "decimal":
         return fnum(f"{n:.2f}")
@@ -976,7 +971,7 @@ class Renderer:
 def build_video(summary, timeline, audio_path, out_dir):
     os.makedirs(out_dir, exist_ok=True)
 
-    find_logo()  # اگه لوگو نبود همین‌جا متوقف می‌شه
+    find_logo()  
     summary = sync_tools.prepare_summary(summary)
     segments = sync_tools.build_segments(summary, timeline, audio_path, out_dir)
     scenes = build_scenes(summary, segments)
