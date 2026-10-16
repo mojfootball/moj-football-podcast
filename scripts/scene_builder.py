@@ -1,10 +1,8 @@
 """
 scene_builder.py
 
-هر صحنه‌ی ویدیو دقیقاً از روی زمان‌بندی صدا ساخته می‌شه (نه تایمر ثابت).
-شناسه‌ی صحنه:
-    title | outro | momentum | compare | shots | prediction
-    goal:N | card:N | stat:Key | player:N | news:N
+هر صحنه‌ی ویدیو دقیقاً از روی زمان‌بندی صدا ساخته می‌شه.
+تنوع قالب‌ها هنگام تکرار صحنه‌های مشابه اعمال می‌گردد.
 """
 
 STAT_BY_KEY = {
@@ -96,8 +94,17 @@ class SceneBuilder:
             return {"type": "card_or_sub", "event": self._get(self.card_sub_events, ref, sid)}
 
         if kind == "stat":
+            # تنوع در نمایش آمار در صورت تکرار
+            v = variant % 3
+            if v == 1:
+                return self._compare()
+            if v == 2 and self.all_players:
+                p, team = self.all_players[0]
+                return {"type": "player_card", "player": p, "team": team}
+            
             if ref not in STAT_BY_KEY:
-                raise ValueError(f"آمار ناشناخته: {sid}")
+                # اگر کلید نامشخص بود جدول کلی مقایسه نشان داده می‌شود
+                return self._compare()
             label, fmt = STAT_BY_KEY[ref]
             return {"type": "stat_bar", "label": label, "format": fmt,
                     "home_value": (s.get("home_stats") or {}).get(ref),
