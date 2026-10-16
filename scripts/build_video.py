@@ -2,7 +2,8 @@
 build_video.py (Pillow + ffmpeg)
 
 - زمان‌بندی تصاویر از روی خود فایل صوتی (sync_tools)
-- پس‌زمینه‌ی شاد و رنگی، لوگوی موج فوتبال پایین سمت راست (بدون پس‌زمینه سفید)
+- پس‌زمینه‌ی شاد، رنگی و پویا بر اساس تم اختصاصی لیگ‌ها (با تنوع و رندوم هوشمند)
+- لوگوی موج فوتبال پایین سمت راست (بدون پس‌زمینه سفید)
 - اصلاح فرمت نمایش درصد آمار (رفع مشکل مالکیت 1 درصدی)
 """
 import os
@@ -14,6 +15,7 @@ import math
 import glob
 import time
 import bisect
+import random
 import subprocess
 
 import requests
@@ -33,9 +35,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
 LOGO_NAME = "1784888812641.png"
 
-NAVY = (15, 23, 42)
-SKY = (14, 165, 233)
-VIOLET = (124, 58, 237)
 GOLD = (250, 204, 21)
 GOLD_SOFT = (253, 224, 71)
 HOME = (56, 189, 248)
@@ -45,6 +44,104 @@ MUTED = (214, 224, 240)
 PANEL = (30, 41, 82)
 
 HUD_H = 78
+
+
+# ---------------------------------------------------------------- تم‌های رنگی اختصاصی لیگ‌ها
+LEAGUE_THEMES = {
+    "persian_gulf": [  # لیگ ایران (۲ بک‌گراند رندوم)
+        ((16, 185, 129), (5, 150, 105)),
+        ((245, 158, 11), (217, 119, 6)),
+    ],
+    "premier_league": [  # لیگ انگلستان (۴ بک‌گراند رندوم)
+        ((56, 189, 248), (124, 58, 237)),
+        ((14, 165, 233), (30, 58, 138)),
+        ((168, 85, 247), (88, 28, 135)),
+        ((236, 72, 153), (157, 23, 77)),
+    ],
+    "laliga": [  # لیگ اسپانیا (۲ بک‌گراند رندوم)
+        ((239, 68, 68), (180, 83, 9)),
+        ((245, 158, 11), (159, 18, 57)),
+    ],
+    "serie_a": [  # لیگ ایتالیا (۲ بک‌گراند رندوم)
+        ((59, 130, 246), (29, 78, 216)),
+        ((16, 185, 129), (30, 58, 138)),
+    ],
+    "ligue_1": [  # لیگ فرانسه (۱ بک‌گراند)
+        ((99, 102, 241), (67, 56, 202)),
+    ],
+    "bundesliga": [  # لیگ آلمان (۱ بک‌گراند)
+        ((220, 38, 38), (153, 27, 27)),
+    ],
+    "champions_league": [  # لیگ قهرمانان اروپا (۴ بک‌گراند با طیف‌های آبی ملایم)
+        ((14, 165, 233), (30, 58, 138)),
+        ((56, 189, 248), (15, 23, 42)),
+        ((3, 105, 161), (30, 27, 75)),
+        ((2, 132, 199), (23, 37, 84)),
+    ],
+    "europa_league": [((249, 115, 22), (194, 65, 12))],
+    "conference_league": [((34, 197, 94), (21, 128, 61))],
+    "acl_elite": [((14, 165, 233), (234, 179, 8))],
+    "acl_2": [((20, 184, 166), (15, 118, 110))],
+    "nations_league": [  # لیگ ملت‌های اروپا (۴ بک‌گراند با طیف‌های قرمز ملایم)
+        ((239, 68, 68), (153, 27, 27)),
+        ((248, 113, 113), (127, 29, 29)),
+        ((220, 38, 38), (88, 28, 135)),
+        ((251, 113, 133), (159, 18, 57)),
+    ],
+    "euro": [((59, 130, 246), (109, 40, 217))],
+    "asian_cup": [((234, 179, 8), (180, 83, 9))],
+    "world_cup": [  # جام جهانی (۴ بک‌گراند با طیف‌های سبز ملایم)
+        ((34, 197, 94), (21, 128, 61)),
+        ((74, 222, 128), (20, 83, 45)),
+        ((16, 185, 129), (6, 95, 70)),
+        ((52, 211, 153), (15, 23, 42)),
+    ],
+    "friendly": [  # بازی‌های دوستانه یا متفرقه (۳ بک‌گراند رندوم)
+        ((20, 184, 166), (99, 102, 241)),
+        ((244, 114, 182), (124, 58, 237)),
+        ((251, 146, 60), (225, 29, 72)),
+    ]
+}
+
+
+def get_league_colors(league_name):
+    name = str(league_name or "").lower()
+    
+    if "ایران" in name or "persian" in name or "pro league" in name:
+        key = "persian_gulf"
+    elif "premier league" in name or "انگلستان" in name or "انگلیس" in name:
+        key = "premier_league"
+    elif "laliga" in name or "اسپانیا" in name:
+        key = "laliga"
+    elif "serie a" in name or "ایتالیا" in name:
+        key = "serie_a"
+    elif "ligue 1" in name or "فرانسه" in name:
+        key = "ligue_1"
+    elif "bundesliga" in name or "آلمان" in name:
+        key = "bundesliga"
+    elif "champions league" in name or "قهرمانان اروپا" in name:
+        key = "champions_league"
+    elif "europa league" in name or "باشگاه‌های اروپا" in name:
+        key = "europa_league"
+    elif "conference" in name or "کنفرانس" in name:
+        key = "conference_league"
+    elif "elite" in name or "نخبگان" in name:
+        key = "acl_elite"
+    elif "acl" in name or "آسیا" in name:
+        key = "acl_2"
+    elif "nations league" in name or "ملت‌های اروپا" in name:
+        key = "nations_league"
+    elif "euro" in name or "یورو" in name:
+        key = "euro"
+    elif "asian cup" in name or "جام ملت‌های آسیا" in name:
+        key = "asian_cup"
+    elif "world cup" in name or "جام جهانی" in name:
+        key = "world_cup"
+    else:
+        key = "friendly"
+        
+    palette = LEAGUE_THEMES[key]
+    return random.choice(palette)
 
 
 # ---------------------------------------------------------------- متن فارسی
@@ -246,7 +343,7 @@ def badge(name, url, size):
         img.paste(lg, ((size - lg.width) // 2, (size - lg.height) // 2), lg)
     else:
         initials = "".join(w[0] for w in str(name or "?").split()[:2]).upper() or "?"
-        d.text((size / 2, size / 2), initials, font=font(size * 0.38), fill=NAVY, anchor="mm")
+        d.text((size / 2, size / 2), initials, font=font(size * 0.38), fill=(15, 23, 42), anchor="mm")
     return img
 
 
@@ -277,13 +374,16 @@ def paste_center(layer, img, cx, cy):
     layer.paste(img, (int(cx - img.width / 2), int(cy - img.height / 2)), img)
 
 
-# ---------------------------------------------------------------- پس‌زمینه‌ی شاد
-def make_background():
+# ---------------------------------------------------------------- پس‌زمینه پویا بر اساس لیگ
+def make_background(summary=None):
+    league_name = summary.get("league") if summary else None
+    c1_rgb, c2_rgb = get_league_colors(league_name)
+
     v = Image.linear_gradient("L").resize((W, H))
     h = Image.linear_gradient("L").rotate(90).resize((W, H))
     mask = ImageChops.add(v, h, scale=2)
-    c1 = Image.new("RGB", (W, H), SKY)
-    c2 = Image.new("RGB", (W, H), VIOLET)
+    c1 = Image.new("RGB", (W, H), c1_rgb)
+    c2 = Image.new("RGB", (W, H), c2_rgb)
     bg = Image.composite(c2, c1, mask)
 
     over = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -315,7 +415,7 @@ def make_panel(full):
     img, d = new_layer()
     top = 28 if full else HUD_H + 20
     bottom = H - 28 if full else H - 26
-    rrect(d, (28, top, W - 28, bottom), 36, fill=NAVY + (120,), outline=(255, 255, 255, 70), width=2)
+    rrect(d, (28, top, W - 28, bottom), 36, fill=(15, 23, 42) + (120,), outline=(255, 255, 255, 70), width=2)
     return img
 
 
@@ -323,14 +423,13 @@ def make_mark():
     """لوگوی موج فوتبال، پایین سمت راست (بدون پس‌زمینه سفید اضافی)."""
     lg = brand(84)
     img, _ = new_layer()
-    # درج مستقیم بدون باکس سفیدرنگ پشت آن
     img.paste(lg, (W - lg.width - 24, H - lg.height - 20), lg)
     return img
 
 
 def make_hud(summary):
     img, d = new_layer()
-    d.rectangle((0, 0, W, HUD_H), fill=NAVY + (235,))
+    d.rectangle((0, 0, W, HUD_H), fill=(15, 23, 42) + (235,))
     d.rectangle((0, HUD_H, W, HUD_H + 3), fill=GOLD + (255,))
 
     home, away = summary.get("home_team"), summary.get("away_team")
@@ -499,7 +598,6 @@ def fmt_stat(v, fmt):
     if n is None:
         return "-"
     if fmt == "percent":
-        # اصلاح مقادیر اعشاری مثل 0.6 به 60 درصد واقعی
         if 0 < n <= 1.0:
             n = n * 100
         return fnum(int(round(n))) + "٪"
@@ -897,7 +995,7 @@ class Renderer:
         self.scenes = scenes
         self.total = total
         self.starts = [sc["start"] for sc in scenes]
-        self.bg = make_background()
+        self.bg = make_background(summary)
         self.blobs = make_blobs()
         self.panel_hud = make_panel(False)
         self.panel_full = make_panel(True)
