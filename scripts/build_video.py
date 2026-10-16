@@ -1000,7 +1000,8 @@ def build_video(summary, timeline, audio_path, out_dir):
         "ffmpeg", "-y", "-loglevel", "error",
         "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
         "-i", audio_path,
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",
+        "-c:v", "libx264", "-preset", "medium", "-crf", "21", "-pix_fmt", "yuv420p",
+        "-profile:v", "main", "-level", "4.0",
         "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart",
         final_path,
     ]
