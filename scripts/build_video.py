@@ -1,7 +1,10 @@
 """
 build_video.py  (نسخه‌ی Pillow + ffmpeg)
-بدون مرورگر؛ همه‌ی صحنه‌ها با Pillow ترسیم و فریم‌ها مستقیم به ffmpeg داده می‌شن.
-امضای تابع با نسخه‌ی قبلی یکیه:
+
+بدون مرورگر، بدون وابستگی لحظه‌ای به اینترنت برای فونت/طراحی.
+همه‌ی صحنه‌ها با Pillow ترسیم می‌شن و فریم‌ها مستقیم به ffmpeg داده می‌شن.
+
+امضای تابع اصلی با نسخه‌ی قبلی یکیه:
     build_video(summary, timeline, audio_path, out_dir) -> final.mp4
 """
 import os
@@ -286,6 +289,16 @@ def make_background():
     return bg
 
 
+def make_mark():
+    """لوگوی موج فوتبال، گوشه‌ی پایین سمت راست."""
+    lg = brand(64)
+    if lg is None:
+        return None
+    img, _ = new_layer()
+    img.paste(lg, (W - lg.width - 24, H - lg.height - 22), lg)
+    return img
+
+
 def make_glow():
     g = Image.new("RGBA", (640, 640), (0, 0, 0, 0))
     ImageDraw.Draw(g).ellipse((120, 120, 520, 520), fill=GOLD + (42,))
@@ -313,11 +326,8 @@ def make_hud(summary):
         text(d, (W // 2, cy - 4), ":", 40, MUTED)
         text(d, (W // 2 + 38, cy - 2), fnum(hs), 46, GOLD_SOFT)
 
-    lg = brand(56)
-    if lg is not None:
-        img.paste(lg, (24, (HUD_H - lg.height) // 2), lg)
-    else:
-        text(d, (24, cy), "موج فوتبال", 28, GOLD, anchor="lm")
+    if summary.get("league"):
+        fit_text(d, (24, cy), summary["league"], 24, 250, fill=MUTED, bold=False, anchor="lm")
     return img
 
 
@@ -711,12 +721,152 @@ def scene_outro(s, summary):
     return base, dyn
 
 
+def draw_pitch(d, x0, y0, x1, y1):
+    w, h = x1 - x0, y1 - y0
+    stripes = 10
+    for i in range(stripes):
+        col = (34, 94, 56) if i % 2 == 0 else (38, 102, 61)
+        d.rectangle((x0 + w * i / stripes, y0, x0 + w * (i + 1) / stripes, y1), fill=col + (255,))
+    ln = (255, 255, 255, 190)
+    d.rectangle((x0, y0, x1, y1), outline=ln, width=3)
+    d.line((x0 + w / 2, y0, x0 + w / 2, y1), fill=ln, width=3)
+    cr = h * 0.135
+    d.ellipse((x0 + w / 2 - cr, y0 + h / 2 - cr, x0 + w / 2 + cr, y0 + h / 2 + cr), outline=ln, width=3)
+    bw, bh = w * 0.157, h * 0.593
+    sw, sh = w * 0.052, h * 0.269
+    for side in (0, 1):
+        if side == 0:
+            d.rectangle((x0, y0 + (h - bh) / 2, x0 + bw, y0 + (h + bh) / 2), outline=ln, width=3)
+            d.rectangle((x0, y0 + (h - sh) / 2, x0 + sw, y0 + (h + sh) / 2), outline=ln, width=3)
+            d.rectangle((x0 - 14, y0 + h / 2 - h * 0.054, x0, y0 + h / 2 + h * 0.054), fill=(255, 255, 255, 230))
+        else:
+            d.rectangle((x1 - bw, y0 + (h - bh) / 2, x1, y0 + (h + bh) / 2), outline=ln, width=3)
+            d.rectangle((x1 - sw, y0 + (h - sh) / 2, x1, y0 + (h + sh) / 2), outline=ln, width=3)
+            d.rectangle((x1, y0 + h / 2 - h * 0.054, x1 + 14, y0 + h / 2 + h * 0.054), fill=(255, 255, 255, 230))
+
+
+def scene_goal_pitch(s, summary):
+    """مسیر گل روی زمین. فقط چیزی که در داده هست: گلزن، پاس‌دهنده، دقیقه. موقعیت دقیق بازیکنان شماتیکه."""
+    base, d = new_layer()
+    e = s.get("event") or {}
+    home = s.get("home_team")
+    is_home = e.get("team") == home
+    color = HOME if is_home else AWAY
+    x0, y0, x1, y1 = 200, 105, W - 200, 625
+    draw_pitch(d, x0, y0, x1, y1)
+    w, h = x1 - x0, y1 - y0
+    direction = 1 if is_home else -1
+    goal_x = x1 if direction == 1 else x0
+    cy = y0 + h / 2
+    scorer = (goal_x - direction * w * 0.14, cy + h * 0.07)
+    has_assist = bool(e.get("assist"))
+    assister = (goal_x - direction * w * 0.34, cy - h * 0.27) if has_assist else None
+    goal_pt = (goal_x, cy)
+
+    meta = []
+    if e.get("time") is not None:
+        meta.append("دقیقه " + fnum(e["time"]))
+    if e.get("team"):
+        meta.append(e["team"])
+    fit_text(d, (W // 2, 662), f"{e.get('player') or ''}  ·  " + "  ·  ".join(meta), 34, 1150)
+    text(d, (W // 2, 700), "نمای شماتیک؛ مسیر گل بر اساس گلزن و پاس‌دهنده", 20, MUTED, bold=False)
+
+    def lerp(a, b, t):
+        return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+    def dot(dd, pos, label, q, ring=GOLD):
+        if q <= 0:
+            return
+        r = 20 * q
+        dd.ellipse((pos[0] - r - 5, pos[1] - r - 5, pos[0] + r + 5, pos[1] + r + 5), outline=ring + (255,), width=3)
+        dd.ellipse((pos[0] - r, pos[1] - r, pos[0] + r, pos[1] + r), fill=color + (255,))
+        if q > 0.8:
+            dd.text((pos[0], pos[1] + 44), fa(label), font=font(24), fill=TEXT + (255,), anchor="mm")
+
+    def dyn(dd, img, lt, dur):
+        T = max(1.6, min(dur, 4.0))
+        pop = ease_back(lt / (0.2 * T))
+        if assister:
+            dot(dd, assister, e.get("assist"), pop, ring=TEXT)
+        dot(dd, scorer, e.get("player"), ease_back((lt - 0.08 * T) / (0.2 * T)))
+        ball = None
+        if assister:
+            p = clamp((lt - 0.25 * T) / (0.3 * T))
+            if p > 0:
+                a = lerp(assister, scorer, ease_out(p))
+                dd.line((assister[0], assister[1], a[0], a[1]), fill=TEXT + (200,), width=4)
+                ball = a
+        q = clamp((lt - 0.58 * T) / (0.22 * T))
+        if q > 0:
+            b = lerp(scorer, goal_pt, ease_out(q))
+            dd.line((scorer[0], scorer[1], b[0], b[1]), fill=GOLD + (255,), width=6)
+            ball = b
+        elif ball is None:
+            ball = scorer
+        if ball:
+            dd.ellipse((ball[0] - 11, ball[1] - 11, ball[0] + 11, ball[1] + 11), fill=(250, 250, 250, 255), outline=(20, 20, 20, 255), width=3)
+        if lt > 0.8 * T:
+            f = clamp((lt - 0.8 * T) / 0.7)
+            rr = 15 + 90 * ease_out(f)
+            dd.ellipse((goal_pt[0] - rr, goal_pt[1] - rr, goal_pt[0] + rr, goal_pt[1] + rr),
+                       outline=GOLD_SOFT + (int(230 * (1 - f)),), width=6)
+            g = ease_back((lt - 0.8 * T) / 0.4)
+            dd.text((W // 2, 360), fa("گل!"), font=font(max(20, int(110 * g))), fill=GOLD + (255,), anchor="mm")
+    return base, dyn
+
+
+COMPARE_ROWS = [
+    ("Possession", "مالکیت توپ", "percent"),
+    ("Shots on target", "شوت در چارچوب", "number"),
+    ("Expected Goals", "کیفیت موقعیت‌ها (xG)", "decimal"),
+    ("Total passes", "تعداد پاس", "number"),
+    ("Big Chances Created", "موقعیت‌های بزرگ", "number"),
+    ("Corners", "کرنر", "number"),
+]
+
+
+def scene_compare(s, summary):
+    base, d = new_layer()
+    home, away = s["home_team"], s["away_team"]
+    hst, ast = s.get("home_stats") or {}, s.get("away_stats") or {}
+    rows = [(k, lab, fmt) for k, lab, fmt in COMPARE_ROWS if parse_num(hst.get(k)) is not None and parse_num(ast.get(k)) is not None][:5]
+    header(d, "مقایسه‌ی دو تیم", y=118)
+    fit_text(d, (W - 130, 190), home, 34, 400, fill=HOME, anchor="rm")
+    fit_text(d, (130, 190), away, 34, 400, fill=AWAY, anchor="lm")
+    top, step = 255, 88
+    x0, x1 = 150, W - 150
+    for i, (k, lab, fmt) in enumerate(rows):
+        text(d, (W // 2, top + i * step - 24), lab, 26, MUTED, bold=False)
+
+    def dyn(dd, img, lt, dur):
+        for i, (k, lab, fmt) in enumerate(rows):
+            p = ease_out((lt - 0.15 * i) / 0.8)
+            if p <= 0:
+                continue
+            hv, av = parse_num(hst.get(k)), parse_num(ast.get(k))
+            tot = hv + av
+            ratio = 0.5 if tot <= 0 else clamp(hv / tot, 0.08, 0.92)
+            y = top + i * step
+            rrect(dd, (x0, y - 4, x1, y + 28), 16, fill=(255, 255, 255, 22))
+            hx = x1 - (x1 - x0) * ratio * p
+            ax = x0 + (x1 - x0) * (1 - ratio) * p
+            if hx < x1 - 4:
+                rrect(dd, (hx, y - 4, x1, y + 28), 16, fill=HOME + (255,))
+            if ax > x0 + 4:
+                rrect(dd, (x0, y - 4, ax, y + 28), 16, fill=AWAY + (255,))
+            dd.text((x1 - 14, y + 12), fa(fmt_stat(hv * p, fmt)), font=font(26), fill=(255, 255, 255, 255), anchor="rm")
+            dd.text((x0 + 14, y + 12), fa(fmt_stat(av * p, fmt)), font=font(26), fill=(255, 255, 255, 255), anchor="lm")
+    return base, dyn
+
+
 SCENES = {
     "title": scene_title, "goal": scene_goal, "card_or_sub": scene_card_or_sub, "stat_bar": scene_stat_bar,
     "shot_map": scene_shot_map, "player_card": scene_player_card, "prediction": scene_prediction,
     "news": scene_news, "momentum": scene_momentum, "outro": scene_outro,
+    "goal_pitch": scene_goal_pitch, "compare": scene_compare,
 }
 NO_HUD = {"title", "outro"}
+NO_MARK = {"title", "outro"}
 
 
 # ---------------------------------------------------------------- رندر
@@ -728,6 +878,7 @@ class Renderer:
         self.bg = make_background()
         self.glow = make_glow()
         self.hud = make_hud(summary)
+        self.mark = make_mark()
         self._cache_idx = None
         self._cache = None
 
@@ -775,6 +926,9 @@ class Renderer:
 
         if sc.get("type") not in NO_HUD:
             img.paste(self.hud, (0, 0), self.hud)
+
+        if self.mark is not None and sc.get("type") not in NO_MARK:
+            img.paste(self.mark, (0, 0), self.mark)
 
         d = ImageDraw.Draw(img)
         d.rectangle((0, H - 6, int(W * clamp(t / self.total)), H), fill=GOLD)
