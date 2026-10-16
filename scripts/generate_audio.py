@@ -103,20 +103,24 @@ def synthesize_dialogue(turns, output_path):
 
 
 def build_scene_timeline(turns, total_seconds):
+    """
+    فقط متن هر نوبت صحبت رو نگه می‌داره (با یه تخمین اولیه‌ی زمان).
+    زمان‌بندی واقعی تصاویر در sync_tools از روی خود فایل صوتی محاسبه می‌شه.
+    """
     word_counts = [max(1, len(t["text"].split())) for t in turns]
     total_words = sum(word_counts)
     timeline = []
     elapsed = 0.0
     for t, wc in zip(turns, word_counts):
         duration = total_seconds * (wc / total_words)
-        start = elapsed
-        end = elapsed + duration
-        scene = t.get("scene", "momentum")
-        if timeline and timeline[-1]["scene"] == scene:
-            timeline[-1]["end"] = end
-        else:
-            timeline.append({"scene": scene, "start": start, "end": end})
-        elapsed = end
+        timeline.append({
+            "scene": t.get("scene", "momentum"),
+            "start": elapsed,
+            "end": elapsed + duration,
+            "speaker": t.get("speaker"),
+            "text": t["text"],
+        })
+        elapsed += duration
     if timeline:
         timeline[-1]["end"] = total_seconds
     return timeline
@@ -139,5 +143,4 @@ if __name__ == "__main__":
     with open("timing.json", "w", encoding="utf-8") as f:
         json.dump(timeline, f, ensure_ascii=False, indent=2)
 
-    print(f"\n{len(timeline)} بلوک صحنه ساخته شد:\n")
-    print(json.dumps(timeline, ensure_ascii=False, indent=2))
+    print(f"\n{len(timeline)} نوبت صحبت ذخیره شد.")
