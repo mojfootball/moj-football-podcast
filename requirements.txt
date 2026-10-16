@@ -1,4 +1,1 @@
-requests
-Pillow
-arabic-reshaper
-python-bidi
+faster-whisper
