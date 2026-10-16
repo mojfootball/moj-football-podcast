@@ -146,8 +146,7 @@ def generate_persian_script(summary):
             resp.raise_for_status()
             data = resp.json()
             raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
-            from episode_tools import finalize_turns
-return finalize_turns(json.loads(raw_text), summary)
+            return finalize_turns(json.loads(raw_text), summary)
         except requests.RequestException as e:
             last_error = e
             print(f"تلاش {attempt + 1} ناموفق بود: {e}")
