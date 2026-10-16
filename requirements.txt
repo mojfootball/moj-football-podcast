@@ -3,4 +3,5 @@ faster-whisper
 moviepy
 pillow
 gtts
-
+arabic_reshaper
+python-bidi
