@@ -5,6 +5,7 @@ build_video.py (Pillow + ffmpeg)
 - پس‌زمینه‌ی شاد، رنگی و پویا بر اساس تم اختصاصی لیگ‌ها (با تنوع و رندوم هوشمند)
 - لوگوی موج فوتبال پایین سمت راست (بدون پس‌زمینه سفید)
 - اصلاح فرمت نمایش درصد آمار (رفع مشکل مالکیت 1 درصدی)
+- پشتیبانی کامل از رسم صحنه جدول رده‌بندی با جزئیات کامل
 """
 import os
 import io
@@ -522,6 +523,54 @@ def scene_title(s, summary):
     return base, dyn
 
 
+def scene_table(s, summary):
+    """رندر گرافیکی جدول رده‌بندی شامل اطلاعات کامل تیم‌ها (رتبه، بازی، برد، مساوی، باخت، گل زده/خورده، تفاضل، امتیاز)"""
+    base, d = new_layer()
+    header(d, "جایگاه در جدول رده‌بندی")
+    home, away = s["home_team"], s["away_team"]
+    h_st = s.get("home_standing") or {}
+    a_st = s.get("away_standing") or {}
+
+    cx0, cx1, cy0, cy1 = 120, W - 120, 200, 630
+    rrect(d, (cx0, cy0, cx1, cy1), 36, fill=PANEL + (255,), outline=GOLD + (255,), width=3)
+
+    hb = badge(home, s.get("home_logo"), 64)
+    ab = badge(away, s.get("away_logo"), 64)
+    base.paste(ab, (cx0 + 40, 240), ab)
+    base.paste(hb, (cx0 + 40, 390), hb)
+
+    fit_text(d, (cx0 + 130, 260), away, 30, 250, fill=AWAY, anchor="lm")
+    fit_text(d, (cx0 + 130, 410), home, 30, 250, fill=HOME, anchor="lm")
+
+    headers_text = ["رتبه", "بازی", "برد", "مساوی", "باخت", "گل‌زده", "گل‌خورده", "تفاضل", "امتیاز"]
+    hx_positions = [650, 710, 770, 830, 890, 950, 1010, 1070, 1140]
+    
+    for h_txt, hx in zip(headers_text, hx_positions):
+        text(d, (hx, 200), h_txt, 20, MUTED)
+
+    def draw_row(y, st):
+        rank = fnum(st.get("rank", "-"))
+        played = fnum(st.get("played", "-"))
+        win = fnum(st.get("win", "-"))
+        draw = fnum(st.get("draw", "-"))
+        loss = fnum(st.get("loss", "-"))
+        gf = fnum(st.get("gf", "-"))
+        ga = fnum(st.get("ga", "-"))
+        gd = fnum(st.get("gd", "-"))
+        pts = fnum(st.get("points", "-"))
+        
+        vals = [rank, played, win, draw, loss, gf, ga, gd, pts]
+        for val, hx in zip(vals, hx_positions):
+            text(d, (hx, y), val, 24, GOLD_SOFT if hx == hx_positions[-1] else TEXT)
+
+    draw_row(280, a_st)
+    draw_row(430, h_st)
+
+    def dyn(dd, img, lt, dur):
+        pass
+    return base, dyn
+
+
 def scene_goal(s, summary):
     base, d = new_layer()
     e = s.get("event") or {}
@@ -982,7 +1031,7 @@ SCENES = {
     "title": scene_title, "goal": scene_goal, "card_or_sub": scene_card_or_sub, "stat_bar": scene_stat_bar,
     "shot_map": scene_shot_map, "player_card": scene_player_card, "prediction": scene_prediction,
     "news": scene_news, "momentum": scene_momentum, "outro": scene_outro,
-    "goal_pitch": scene_goal_pitch, "compare": scene_compare,
+    "goal_pitch": scene_goal_pitch, "compare": scene_compare, "table": scene_table,
 }
 NO_HUD = {"title", "outro"}
 NO_MARK = {"outro"}
