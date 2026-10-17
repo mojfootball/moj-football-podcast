@@ -5,3 +5,4 @@ pillow
 gtts
 arabic_reshaper
 python-bidi
+beautifulsoup4
