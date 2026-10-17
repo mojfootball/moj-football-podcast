@@ -2,7 +2,7 @@
 scene_builder.py
 
 هر صحنه‌ی ویدیو دقیقاً از روی زمان‌بندی صدا ساخته می‌شه.
-تنوع قالب‌ها هنگام تکرار صحنه‌های مشابه اعمال می‌گردد.
+تنوع قالب‌ها و پشتیبانی از صحنه‌ی جدول رده‌بندی (table).
 """
 
 STAT_BY_KEY = {
@@ -78,6 +78,17 @@ class SceneBuilder:
                 raise ValueError("پیش‌بینی قبل از بازی در داده‌ها نیست")
             return {"type": "prediction", "prediction": s["prematch_prediction"], **teams, "score": s["score"]}
 
+        if kind == "table":
+            standings = s.get("standings") or {}
+            return {
+                "type": "table",
+                **teams,
+                "home_logo": s.get("home_logo"),
+                "away_logo": s.get("away_logo"),
+                "home_standing": standings.get("home_team_standing"),
+                "away_standing": standings.get("away_team_standing")
+            }
+
         if kind == "goal":
             event = self._get(self.goal_events, ref, sid)
             v = variant % 3
@@ -94,7 +105,6 @@ class SceneBuilder:
             return {"type": "card_or_sub", "event": self._get(self.card_sub_events, ref, sid)}
 
         if kind == "stat":
-            # تنوع در نمایش آمار در صورت تکرار
             v = variant % 3
             if v == 1:
                 return self._compare()
@@ -103,7 +113,6 @@ class SceneBuilder:
                 return {"type": "player_card", "player": p, "team": team}
             
             if ref not in STAT_BY_KEY:
-                # اگر کلید نامشخص بود جدول کلی مقایسه نشان داده می‌شود
                 return self._compare()
             label, fmt = STAT_BY_KEY[ref]
             return {"type": "stat_bar", "label": label, "format": fmt,
