@@ -1,8 +1,10 @@
 """
 scene_builder.py
 
-هر صحنه‌ی ویدیو دقیقاً از روی زمان‌بندی صدا ساخته می‌شه.
-تنوع قالب‌ها و پشتیبانی از صحنه‌ی جدول رده‌بندی (table).
+هر صحنه‌ی ویدیو دقیقاً از روی زمان‌بندی صدا ساخته می‌شه (نه تایمر ثابت).
+شناسه‌ی صحنه:
+    title | outro | momentum | compare | shots | prediction | table
+    goal:N | card:N | stat:Key | player:N | news:N
 """
 
 STAT_BY_KEY = {
@@ -78,6 +80,7 @@ class SceneBuilder:
                 raise ValueError("پیش‌بینی قبل از بازی در داده‌ها نیست")
             return {"type": "prediction", "prediction": s["prematch_prediction"], **teams, "score": s["score"]}
 
+        # اضافه شدن صحنه‌ی جدول رده‌بندی همراه با اطلاعات کامل تیم‌ها
         if kind == "table":
             standings = s.get("standings") or {}
             return {
