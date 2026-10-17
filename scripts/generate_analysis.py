@@ -15,7 +15,7 @@ def summarize_match(details):
     home = details.get("homeTeam", {})
     away = details.get("awayTeam", {})
     league_name = details.get("league", {}).get("name")
-    league_url = details.get("league", {}).get("url")  # در صورت وجود آدرس جدول در داده‌های ورودی
+    league_url = details.get("league", {}).get("url")  # در صورت وجود آدرس مستقیم جدول در داده‌های ورودی
 
     def top_players(team):
         return [
@@ -42,9 +42,10 @@ def summarize_match(details):
     prematch_list = details.get("predictions", {}).get("prematch", [])
     prematch = prematch_list[0] if prematch_list else None
 
-    # دریافت اطلاعات جدول رده‌بندی لیگ برای دو تیم
-    home_standing = get_team_standing_info(league_url, home.get("name")) if league_url else None
-    away_standing = get_team_standing_info(league_url, away.get("name")) if league_url else None
+    # دریافت اطلاعات جدول رده‌بندی لیگ برای دو تیم (ارسال آدرس یا نام لیگ به تابع)
+    league_ref = league_url or league_name
+    home_standing = get_team_standing_info(league_ref, home.get("name")) if league_ref else None
+    away_standing = get_team_standing_info(league_ref, away.get("name")) if league_ref else None
 
     return {
         "league": league_name,
