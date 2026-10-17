@@ -2,6 +2,7 @@ import os
 import json
 import time
 import requests
+from fetch_standings import get_team_standing_info
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"].strip()
 GEMINI_URL = (
@@ -13,6 +14,8 @@ GEMINI_URL = (
 def summarize_match(details):
     home = details.get("homeTeam", {})
     away = details.get("awayTeam", {})
+    league_name = details.get("league", {}).get("name")
+    league_url = details.get("league", {}).get("url")  # در صورت وجود آدرس جدول در داده‌های ورودی
 
     def top_players(team):
         return [
@@ -39,14 +42,22 @@ def summarize_match(details):
     prematch_list = details.get("predictions", {}).get("prematch", [])
     prematch = prematch_list[0] if prematch_list else None
 
+    # دریافت اطلاعات جدول رده‌بندی لیگ برای دو تیم
+    home_standing = get_team_standing_info(league_url, home.get("name")) if league_url else None
+    away_standing = get_team_standing_info(league_url, away.get("name")) if league_url else None
+
     return {
-        "league": details.get("league", {}).get("name"),
+        "league": league_name,
         "venue": details.get("venue", {}).get("name"),
         "score": details.get("state", {}).get("score", {}).get("current"),
         "home_team": home.get("name"),
         "away_team": away.get("name"),
         "home_logo": home.get("logo"),
         "away_logo": away.get("logo"),
+        "standings": {
+            "home_team_standing": home_standing,  # رتبه، بازی، برد، مساوی، باخت، گل زده، گل خورده، تفاضل، امتیاز
+            "away_team_standing": away_standing,
+        } if (home_standing or away_standing) else None,
         "prematch_prediction": {
             "home_pct": prematch.get("probabilities", {}).get("home"),
             "draw_pct": prematch.get("probabilities", {}).get("draw"),
@@ -96,6 +107,7 @@ def generate_persian_script(summary):
         "- کارت‌های زرد معمولی، تعویض‌های کم‌اهمیت و رویدادهای فرعی رو اصلاً لازم نیست همه رو بگن؛ فقط اگه یکی از اونا واقعاً روی روند بازی اثر گذاشت بیارش",
         "- آمار بازی (مالکیت، شوت‌ها، اکسپکتد گل و از این قبیل) فقط باید به‌عنوان مدرک و پشتوانه‌ی یه حرف یا استدلال وسط بحث بیاد، نه به‌صورت یه بلوک جدا که انگار دارن گزارش آماری می‌خونن",
         "- عملکرد یکی دو تا از بازیکنان برتر رو هم در لابه‌لای همون بحث‌ها (نه جدا) بیار",
+        "- اگه در بخش standings اطلاعات جدول لیگ (رتبه، بازی، برد، مساوی، باخت، گل زده/خورده، تفاضل گل و امتیاز) موجود بود، حتماً مجری‌ها به جایگاه فعلی تیم‌ها در جدول و تأثیر این نتیجه روی رتبه، تفاضل یا امتیازاتشون اشاره کنن.",
         "- اگه توی بخش news_headlines خبر یا واکنشی بود، نزدیک پایان گفتگو یه بخش حاشیه‌ها بذار. اگه خبر مهمی نبود این بخش رو خیلی کوتاه بگیر یا کامل حذفش کن، چیزی از خودت نساز",
         "- شروع گفتگو همیشه با جمله‌ی استاندارد 'به این قسمت از موج فوتبال خوش آمدید' باشه. هرگز از جملاتی مثل 'اولین قسمت' یا 'قسمت اول' استفاده نکن چون این برنامه‌ها همیشگی و پویا هستن.",
         "- مجری‌ها همیشه در شروع صحبت خودشون رو با احترام و محاوره‌ای معرفی کنن (مثلاً: 'سلام به بینندگان عزیز موج فوتبال، من پگاه هستم...' و مجتبآ هم بگه 'سلام، من هم مجتبآ هستم...')",
@@ -115,7 +127,8 @@ def generate_persian_script(summary):
         "- طول گفتگو حدود ۸ تا ۱۰ دقیقه (۱۱۰۰ تا ۱۴۰۰ کلمه) باشه.",
         "",
         "برچسب صحنه‌ی تصویری:",
-        "- هر عضو آرایه باید کلید scene داشته باشه (title, momentum, goal, card_or_sub, stat_bar, shot_map, player_card, prediction, news, outro).",
+        "- هر عضو آرایه باید کلید scene داشته باشه (title, momentum, goal, card_or_sub, stat_bar, shot_map, player_card, prediction, table, news, outro).",
+        "- صحنه‌ی table زمانی استفاده بشه که مجری‌ها دارن درباره جایگاه تیم‌ها در جدول رده‌بندی، امتیاز و تفاضل صحبت می‌کنند.",
         "- scene باید با موضوع گفتگو هماهنگ باشه و وقتی موضوع تغییر می‌کنه، scene هم تغییر کنه.",
         "- اولین عضو scene=title و آخرین عضو scene=outro داشته باشه.",
         "",
