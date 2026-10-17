@@ -1,6 +1,6 @@
 # fetch_standings.py
 import requests
-from bs4نهار import BeautifulSoup
+from bs4 import BeautifulSoup
 
 # لینک‌های پیش‌فرض جدول لیگ‌های مهم در ورزش ۳
 LEAGUE_URLS = {
