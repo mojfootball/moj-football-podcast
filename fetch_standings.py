@@ -2,49 +2,69 @@
 import requests
 from bs4 import BeautifulSoup
 
-def get_league_standings(league_name):
+def get_league_standings(league_url):
     """
-    اطلاعات جدول رده‌بندی لیگ را با جزئیات کامل شامل:
-    رتبه، نام تیم، تعداد بازی، برد، مساوی، باخت، گل زده، گل خورده، تفاضل گل و امتیاز استخراج می‌کند.
+    جدول رده‌بندی را از سایت ورزش ۳ (یا صفحات مشابه) با تمام جزئیات:
+    بازی، برد، مساوی، باخت، گل زده، گل خورده، تفاضل و امتیاز استخراج می‌کند.
     """
     standings = []
     try:
-        print(f"در حال دریافت جدول رده‌بندی برای: {league_name}...")
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        response = requests.get(league_url, headers=headers, timeout=15)
+        response.raise_for_status()
         
-        # نمونه ساختار داده‌ای که برای هر تیم باید استخراج و ذخیره شود:
-        # هر تیم شامل یک دیکشنری با کلیدهای زیر خواهد بود:
-        # {
-        #     "rank": 1,          # رتبه در جدول
-        #     "team": "نام تیم",    # نام تیم
-        #     "played": 0,        # تعداد بازی
-        #     "win": 0,           # برد
-        #     "draw": 0,          # مساوی
-        #     "loss": 0,          # باخت
-        #     "gf": 0,            # گل زده (Goals For)
-        #     "ga": 0,            # گل خورده (Goals Against)
-        #     "gd": 0,            # تفاضل گل (Goal Difference)
-        #     "points": 0         # امتیاز
-        # }
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        # نکته: بسته به سایتی که برای اسکرپ انتخاب می‌کنید (مثل ورزش۳ یا منابع ورزشی دیگر)، 
-        # می‌توانید پارس‌کننده BeautifulSoup را اینجا بنویسید.
+        # پیدا کردن جدول رده‌بندی در صفحه ورزش ۳
+        # (بسته به ساختار جدول در HTML سایت، ردیف‌ها استخراج می‌شوند)
+        table = soup.find('table', {'class': 'standings-table'}) # یا کلاس مرتبط با جدول رده‌بندی ورزش ۳
+        if not table:
+            # جستجوی عمومی‌تر اگر کلاس متفاوت باشد
+            table = soup.find('table')
+            
+        if table:
+            rows = table.find_all('tr')
+            for rank, row in enumerate(rows[1:], start=1): # رد کردن سرستون جدول
+                cols = row.find_all('td')
+                if len(cols) >= 8:
+                    team_name = cols[1].get_text(strip=True)
+                    played = int(cols[2].get_text(strip=True) or 0)
+                    win = int(cols[3].get_text(strip=True) or 0)
+                    draw = int(cols[4].get_text(strip=True) or 0)
+                    loss = int(cols[5].get_text(strip=True) or 0)
+                    
+                    # تفکیک گل زده و خورده معمولاً در یک ستون مثل تفکیک‌کننده یا ستون‌های جداست
+                    # فرض بر این است که ستون‌ها به ترتیب استاندارد قرار دارند:
+                    gf = int(cols[6].get_text(strip=True) or 0)
+                    ga = int(cols[7].get_text(strip=True) or 0)
+                    gd = int(cols[8].get_text(strip=True) or 0) if len(cols) > 8 else (gf - ga)
+                    points = int(cols[9].get_text(strip=True) or cols[-1].get_text(strip=True) or 0)
+
+                    standings.append({
+                        "rank": rank,
+                        "team": team_name,
+                        "played": played,
+                        "win": win,
+                        "draw": draw,
+                        "loss": loss,
+                        "gf": gf,
+                        "ga": ga,
+                        "gd": gd,
+                        "points": points
+                    })
         
         return standings
 
     except Exception as e:
-        print(f"خطا در دریافت یا پردازش جدول رده‌بندی: {e}")
+        print(f"خطا در اسکرپ جدول رده‌بندی از ورزش ۳: {e}")
         return []
 
-def get_team_standing_info(league_name, team_name):
+def get_team_standing_info(league_url, team_name):
     """
-    اطلاعات کامل یک تیم خاص (مثل رتبه، امتیاز، تفاضل و...) را از جدول لیگ پیدا کرده و برمی‌گرداند.
+    اطلاعات کامل یک تیم خاص را از جدول لیگ استخراج می‌کند.
     """
-    standings = get_league_standings(league_name)
+    standings = get_league_standings(league_url)
     for team in standings:
         if team_name.lower() in team["team"].lower() or team["team"].lower() in team_name.lower():
             return team
     return None
-
-if __name__ == "__main__":
-    # تست ساده ماژول
-    print(get_league_standings("Premier League"))
