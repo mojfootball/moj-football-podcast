@@ -1,94 +1,71 @@
-# fetch_standings.py
+import os
 import requests
-from bs4 import BeautifulSoup
 
-# لینک‌های پیش‌فرض جدول لیگ‌های مهم در ورزش ۳
-LEAGUE_URLS = {
-    "persian gulf pro league": "https://www.varzesh3.com/table/league/1/%D6%B9%20%D9%84%DB%8C%DA%AF-%D8%A8%D8%B1%D8%AA%D8%B1-%D8%A7%DB%8C%D8%B1%D8%A7%D9%86",
-    "premier league": "https://www.varzesh3.com/table/league/2/%D9%84%DB%8C%DA%AF-%D8%A8%D8%B1%D8%AA%D8%B1-%D8%A7%D9%86%DA%AF%D9%84%D8%B3%D8%AA%D8%A7%D9%86",
-    "laliga": "https://www.varzesh3.com/table/league/3/%D9%84%DB%8C%DA%AF-%D8%A7%D8%B3%DBE%D9%86%DB%8C%D8%A7-%D9%84%D8%A7%D9%84%DB%8C%DA%AF%D8%A7",
-    "serie a": "https://www.varzesh3.com/table/league/4/%D9%84%DB%8C%DA%AF-%D8%A7%DB%8C%D8%AA%D8%A7%D9%84%DB%8C%D8%A7-%D8%B3%D8%B1%DB%8C-%D8%A2",
-    "bundesliga": "https://www.varzesh3.com/table/league/5/%D9%84%DB%8C%DA%AF-%D8%A2%D9%84%D9%85%D8%A7%D9%86-%D8%A8%D9%88%D9%86%D8%AF%D8%B3%D9%84%DB%8C%DA%AF%D8%A7",
-    "ligue 1": "https://www.varzesh3.com/table/league/6/%D9%84%DB%8C%DA%AF-%D9%81%D8%B1%D8%A7%D9%86%D8%B3%D9%87",
-    "champions league": "https://www.varzesh3.com/table/league/7/%D9%84%DB%8C%DA%AF-%D9%82%D9%87%D8%B1%D9%85%D8%A7%D9%86%D8%A7%D9%86-%D8%A7%D8%B1%D9%88%DBE"
-}
+API_KEY = os.environ["HIGHLIGHTLY_API_KEY"].strip()
+BASE_URL = "https://soccer.highlightly.net/standings"
+HEADERS = {"x-rapidapi-key": API_KEY}
 
-def get_league_url_by_name(league_name):
-    """نام لیگ را دریافت کرده و لینک مربوط به ورزش ۳ را برمی‌گرداند"""
-    if not league_name:
+# کش داخل همین اجرا؛ هر لیگ/فصل فقط یه‌بار درخواست می‌شه
+_cache = {}
+
+
+def get_standings(league_id, season):
+    if not league_id or not season:
         return None
-    name = league_name.lower()
-    for key, url in LEAGUE_URLS.items():
-        if key in name:
-            return url
-    return None
+    key = (league_id, season)
+    if key in _cache:
+        return _cache[key]
 
-def get_league_standings(league_url):
-    """
-    جدول رده‌بندی را از سایت ورزش ۳ با تمام جزئیات شامل:
-    رتبه، نام تیم، تعداد بازی، برد، مساوی، باخت، گل زده، گل خورده، تفاضل گل و امتیاز استخراج می‌کند.
-    """
-    standings = []
-    if not league_url:
-        return standings
-        
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        response = requests.get(league_url, headers=headers, timeout=15)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        table = soup.find('table', {'class': 'standings-table'})
-        if not table:
-            table = soup.find('table')
-            
-        if table:
-            rows = table.find_all('tr')
-            for rank, row in enumerate(rows[1:], start=1):
-                cols = row.find_all('td')
-                if len(cols) >= 8:
-                    team_name = cols[1].get_text(strip=True)
-                    try:
-                        played = int(cols[2].get_text(strip=True) or 0)
-                        win = int(cols[3].get_text(strip=True) or 0)
-                        draw = int(cols[4].get_text(strip=True) or 0)
-                        loss = int(cols[5].get_text(strip=True) or 0)
-                        gf = int(cols[6].get_text(strip=True) or 0)
-                        ga = int(cols[7].get_text(strip=True) or 0)
-                        gd = int(cols[8].get_text(strip=True) or 0) if len(cols) > 8 else (gf - ga)
-                        points = int(cols[9].get_text(strip=True) or cols[-1].get_text(strip=True) or 0)
-                    except ValueError:
-                        continue
+        resp = requests.get(
+            BASE_URL,
+            headers=HEADERS,
+            params={"leagueId": league_id, "season": season},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as e:
+        print(f"خطا در گرفتن جدول لیگ {league_id}/{season}: {e}")
+        _cache[key] = None
+        return None
 
-                    standings.append({
-                        "rank": rank,
-                        "team": team_name,
-                        "played": played,
-                        "win": win,
-                        "draw": draw,
-                        "loss": loss,
-                        "gf": gf,
-                        "ga": ga,
-                        "gd": gd,
-                        "points": points
-                    })
-        
-        return standings
+    _cache[key] = data
+    return data
 
-    except Exception as e:
-        print(f"خطا در اسکرپ جدول رده‌بندی از ورزش ۳: {e}")
-        return []
 
-def get_team_standing_info(league_name_or_url, team_name):
-    """
-    اطلاعات کامل یک تیم خاص را از جدول لیگ پیدا کرده و برمی‌گرداند.
-    """
-    url = get_league_url_by_name(league_name_or_url) or league_name_or_url
-    standings = get_league_standings(url)
-    for team in standings:
-        if team_name.lower() in team["team"].lower() or team["team"].lower() in team_name.lower():
-            return team
+def _find_team_row(standings_data, team_id):
+    if not standings_data:
+        return None
+    for group in standings_data.get("groups", []) or []:
+        for row in group.get("standings", []) or []:
+            if row.get("team", {}).get("id") == team_id:
+                return row
     return None
+
+
+def _row_to_standing(row):
+    if not row:
+        return None
+    total = row.get("total", {}) or {}
+    gf = total.get("scoredGoals")
+    ga = total.get("receivedGoals")
+    gd = (gf - ga) if (gf is not None and ga is not None) else None
+    return {
+        "rank": row.get("position"),
+        "played": total.get("games"),
+        "win": total.get("wins"),
+        "draw": total.get("draws"),
+        "loss": total.get("loses"),
+        "gf": gf,
+        "ga": ga,
+        "gd": gd,
+        "points": row.get("points"),
+    }
+
+
+def get_team_standings_for_match(league_id, season, home_team_id, away_team_id):
+    data = get_standings(league_id, season)
+    home_row = _find_team_row(data, home_team_id)
+    away_row = _find_team_row(data, away_team_id)
+    return _row_to_standing(home_row), _row_to_standing(away_row)
