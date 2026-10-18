@@ -2,7 +2,7 @@ import os
 import json
 import time
 import requests
-from fetch_standings import get_team_standing_info
+from fetch_standings import get_team_standings_for_match
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"].strip()
 GEMINI_URL = (
@@ -15,7 +15,6 @@ def summarize_match(details):
     home = details.get("homeTeam", {})
     away = details.get("awayTeam", {})
     league_name = details.get("league", {}).get("name")
-    league_url = details.get("league", {}).get("url")  # در صورت وجود آدرس مستقیم جدول در داده‌های ورودی
 
     def top_players(team):
         return [
@@ -42,10 +41,11 @@ def summarize_match(details):
     prematch_list = details.get("predictions", {}).get("prematch", [])
     prematch = prematch_list[0] if prematch_list else None
 
-    # دریافت اطلاعات جدول رده‌بندی لیگ برای دو تیم (ارسال آدرس یا نام لیگ به تابع)
-    league_ref = league_url or league_name
-    home_standing = get_team_standing_info(league_ref, home.get("name")) if league_ref else None
-    away_standing = get_team_standing_info(league_ref, away.get("name")) if league_ref else None
+    league_id = details.get("league", {}).get("id")
+    season = details.get("league", {}).get("season")
+    home_standing, away_standing = get_team_standings_for_match(
+        league_id, season, home.get("id"), away.get("id")
+    )
 
     return {
         "league": league_name,
@@ -56,7 +56,7 @@ def summarize_match(details):
         "home_logo": home.get("logo"),
         "away_logo": away.get("logo"),
         "standings": {
-            "home_team_standing": home_standing,  # رتبه، بازی، برد، مساوی، باخت، گل زده، گل خورده، تفاضل، امتیاز
+            "home_team_standing": home_standing,
             "away_team_standing": away_standing,
         } if (home_standing or away_standing) else None,
         "prematch_prediction": {
