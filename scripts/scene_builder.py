@@ -81,16 +81,11 @@ class SceneBuilder:
             return {"type": "prediction", "prediction": s["prematch_prediction"], **teams, "score": s["score"]}
 
         # اضافه شدن صحنه‌ی جدول رده‌بندی همراه با اطلاعات کامل تیم‌ها
-        if kind == "table":
-            standings = s.get("standings") or {}
-            return {
-                "type": "table",
-                **teams,
-                "home_logo": s.get("home_logo"),
-                "away_logo": s.get("away_logo"),
-                "home_standing": standings.get("home_team_standing"),
-                "away_standing": standings.get("away_team_standing")
-            }
+                if kind == "table":
+            tc = s.get("table_context")
+            if not tc:
+                return self._compare()
+            return {"type": "table", **teams, "table_context": tc}
 
         if kind == "goal":
             event = self._get(self.goal_events, ref, sid)
