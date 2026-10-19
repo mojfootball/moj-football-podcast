@@ -41,7 +41,7 @@ def summarize_match(details):
     prematch_list = details.get("predictions", {}).get("prematch", [])
     prematch = prematch_list[0] if prematch_list else None
 
-        league_id = details.get("league", {}).get("id")
+    league_id = details.get("league", {}).get("id")
     season = details.get("league", {}).get("season")
     table_context = get_table_context(league_id, season, home.get("id"), away.get("id"))
 
