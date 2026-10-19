@@ -524,47 +524,54 @@ def scene_title(s, summary):
 
 
 def scene_table(s, summary):
-    """رندر گرافیکی جدول رده‌بندی شامل اطلاعات کامل تیم‌ها (رتبه، بازی، برد، مساوی، باخت، گل زده/خورده، تفاضل، امتیاز)"""
     base, d = new_layer()
-    header(d, "جایگاه در جدول رده‌بندی")
-    home, away = s["home_team"], s["away_team"]
-    h_st = s.get("home_standing") or {}
-    a_st = s.get("away_standing") or {}
+    header(d, "جایگاه در جدول رده‌بندی (بعد از این بازی)")
+    tc = s.get("table_context") or {}
+    top8 = tc.get("top8") or []
+    home_id, away_id = tc.get("home_id"), tc.get("away_id")
 
-    cx0, cx1, cy0, cy1 = 120, W - 120, 200, 630
-    rrect(d, (cx0, cy0, cx1, cy1), 36, fill=PANEL + (255,), outline=GOLD + (255,), width=3)
+    extras = []
+    if tc.get("home_extra"):
+        extras.append(tc["home_extra"])
+    if tc.get("away_extra") and (not extras or tc["away_extra"].get("team_id") != extras[0].get("team_id")):
+        extras.append(tc["away_extra"])
 
-    hb = badge(home, s.get("home_logo"), 64)
-    ab = badge(away, s.get("away_logo"), 64)
-    base.paste(ab, (cx0 + 40, 240), ab)
-    base.paste(hb, (cx0 + 40, 390), hb)
+    col_rank_x, col_team_x = 1165, 1110
+    col_played_x, col_gd_x, col_pts_x = 430, 300, 150
+    y0, row_h = 185, 46
 
-    fit_text(d, (cx0 + 130, 260), away, 30, 250, fill=AWAY, anchor="lm")
-    fit_text(d, (cx0 + 130, 410), home, 30, 250, fill=HOME, anchor="lm")
+    text(d, (col_rank_x, y0 - 32), "رتبه", 20, MUTED, bold=False)
+    text(d, (col_played_x, y0 - 32), "بازی", 20, MUTED, bold=False)
+    text(d, (col_gd_x, y0 - 32), "تفاضل", 20, MUTED, bold=False)
+    text(d, (col_pts_x, y0 - 32), "امتیاز", 20, MUTED, bold=False)
 
-    headers_text = ["رتبه", "بازی", "برد", "مساوی", "باخت", "گل‌زده", "گل‌خورده", "تفاضل", "امتیاز"]
-    hx_positions = [650, 710, 770, 830, 890, 950, 1010, 1070, 1140]
-    
-    for h_txt, hx in zip(headers_text, hx_positions):
-        text(d, (hx, 200), h_txt, 20, MUTED)
+    def draw_row(y, row):
+        rid = row.get("team_id")
+        is_home, is_away = rid == home_id, rid == away_id
+        if is_home or is_away:
+            color = HOME if is_home else AWAY
+            rrect(d, (90, y - row_h / 2 + 4, W - 90, y + row_h / 2 - 4), 12, fill=color + (55,))
+        text(d, (col_rank_x, y), fnum(row.get("rank")), 26, GOLD_SOFT if (is_home or is_away) else TEXT)
+        lg = badge(row.get("name"), row.get("logo"), 40)
+        base.paste(lg, (col_team_x - 40, int(y - 20)), lg)
+        fit_text(d, (col_team_x - 55, y), row.get("fa_name") or row.get("name"), 26, 560, fill=TEXT, anchor="rm")
+        text(d, (col_played_x, y), fnum(row.get("played")), 24, MUTED, bold=False)
+        gd = row.get("gd")
+        gd_txt = (("+" if gd and gd > 0 else "") + fnum(gd)) if gd is not None else "-"
+        text(d, (col_gd_x, y), gd_txt, 24, MUTED, bold=False)
+        text(d, (col_pts_x, y), fnum(row.get("points")), 28, GOLD)
 
-    def draw_row(y, st):
-        rank = fnum(st.get("rank", "-"))
-        played = fnum(st.get("played", "-"))
-        win = fnum(st.get("win", "-"))
-        draw = fnum(st.get("draw", "-"))
-        loss = fnum(st.get("loss", "-"))
-        gf = fnum(st.get("gf", "-"))
-        ga = fnum(st.get("ga", "-"))
-        gd = fnum(st.get("gd", "-"))
-        pts = fnum(st.get("points", "-"))
-        
-        vals = [rank, played, win, draw, loss, gf, ga, gd, pts]
-        for val, hx in zip(vals, hx_positions):
-            text(d, (hx, y), val, 24, GOLD_SOFT if hx == hx_positions[-1] else TEXT)
-
-    draw_row(280, a_st)
-    draw_row(430, h_st)
+    y = y0
+    for row in top8:
+        draw_row(y, row)
+        y += row_h
+    if extras:
+        y += 14
+        text(d, (W // 2, y), "...", 26, MUTED)
+        y += 34
+        for row in extras:
+            draw_row(y, row)
+            y += row_h
 
     def dyn(dd, img, lt, dur):
         pass
