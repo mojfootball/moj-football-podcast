@@ -2,7 +2,7 @@ import os
 import json
 import time
 import requests
-from fetch_standings import get_team_standings_for_match
+from fetch_standings import get_table_context
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"].strip()
 GEMINI_URL = (
@@ -41,11 +41,9 @@ def summarize_match(details):
     prematch_list = details.get("predictions", {}).get("prematch", [])
     prematch = prematch_list[0] if prematch_list else None
 
-    league_id = details.get("league", {}).get("id")
+        league_id = details.get("league", {}).get("id")
     season = details.get("league", {}).get("season")
-    home_standing, away_standing = get_team_standings_for_match(
-        league_id, season, home.get("id"), away.get("id")
-    )
+    table_context = get_table_context(league_id, season, home.get("id"), away.get("id"))
 
     return {
         "league": league_name,
@@ -55,10 +53,7 @@ def summarize_match(details):
         "away_team": away.get("name"),
         "home_logo": home.get("logo"),
         "away_logo": away.get("logo"),
-        "standings": {
-            "home_team_standing": home_standing,
-            "away_team_standing": away_standing,
-        } if (home_standing or away_standing) else None,
+        "table_context": table_context,
         "prematch_prediction": {
             "home_pct": prematch.get("probabilities", {}).get("home"),
             "draw_pct": prematch.get("probabilities", {}).get("draw"),
@@ -108,7 +103,8 @@ def generate_persian_script(summary):
         "- کارت‌های زرد معمولی، تعویض‌های کم‌اهمیت و رویدادهای فرعی رو اصلاً لازم نیست همه رو بگن؛ فقط اگه یکی از اونا واقعاً روی روند بازی اثر گذاشت بیارش",
         "- آمار بازی (مالکیت، شوت‌ها، اکسپکتد گل و از این قبیل) فقط باید به‌عنوان مدرک و پشتوانه‌ی یه حرف یا استدلال وسط بحث بیاد، نه به‌صورت یه بلوک جدا که انگار دارن گزارش آماری می‌خونن",
         "- عملکرد یکی دو تا از بازیکنان برتر رو هم در لابه‌لای همون بحث‌ها (نه جدا) بیار",
-        "- اگه در بخش standings اطلاعات جدول لیگ (رتبه، بازی، برد، مساوی، باخت، گل زده/خورده، تفاضل گل و امتیاز) موجود بود، حتماً مجری‌ها به جایگاه فعلی تیم‌ها در جدول و تأثیر این نتیجه روی رتبه، تفاضل یا امتیازاتشون اشاره کنن.",
+        "- اگه بخش table_context موجود بود، حتماً باید یه بخش جداگانه درباره‌ی جایگاه دو تیم تو جدول رده‌بندی وجود داشته باشه. ترتیب ثابت کل گفتگو همیشه این باشه: اول تحلیل کامل روند بازی و لحظات کلیدی، بعدش بخش جدول رده‌بندی، بعدش (اگه خبر مهمی بود) بخش حاشیه‌ها، در آخر جمع‌بندی و خداحافظی. قبل از تموم‌شدن تحلیل بازی، اصلاً به جدول اشاره نکن.",
+        "- وقتی دارن درباره‌ی جدول صحبت می‌کنن، همیشه صریح بگن این جایگاه «بعد از همین بازی» و «با احتساب همین نتیجه»ست؛ هیچ‌وقت نگن تیم‌ها قبل از بازی این‌جا بودن، چون این آمار بعد از پایان بازیه.",
         "- اگه توی بخش news_headlines خبر یا واکنشی بود، نزدیک پایان گفتگو یه بخش حاشیه‌ها بذار. اگه خبر مهمی نبود این بخش رو خیلی کوتاه بگیر یا کامل حذفش کن، چیزی از خودت نساز",
         "- شروع گفتگو همیشه با جمله‌ی استاندارد 'به این قسمت از موج فوتبال خوش آمدید' باشه. هرگز از جملاتی مثل 'اولین قسمت' یا 'قسمت اول' استفاده نکن چون این برنامه‌ها همیشگی و پویا هستن.",
         "- مجری‌ها همیشه در شروع صحبت خودشون رو با احترام و محاوره‌ای معرفی کنن (مثلاً: 'سلام به بینندگان عزیز موج فوتبال، من پگاه هستم...' و مجتبآ هم بگه 'سلام، من هم مجتبآ هستم...')",
