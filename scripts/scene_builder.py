@@ -1,7 +1,7 @@
 """
 scene_builder.py
 
-هر صحنه‌ی ویدیو دقیقاً از روی زمان‌بندی صدا ساخته می‌شه (نه تایمر ثابت).
+هر صحنه‌ی ویدیو دقیقاً از روی زمان‌بندی صدا ساخته می‌شه.
 شناسه‌ی صحنه:
     title | outro | momentum | compare | shots | prediction | table
     goal:N | card:N | stat:Key | player:N | news:N
@@ -80,7 +80,6 @@ class SceneBuilder:
                 raise ValueError("پیش‌بینی قبل از بازی در داده‌ها نیست")
             return {"type": "prediction", "prediction": s["prematch_prediction"], **teams, "score": s["score"]}
 
-        # اضافه شدن صحنه‌ی جدول رده‌بندی همراه با اطلاعات کامل تیم‌ها
         if kind == "table":
             tc = s.get("table_context")
             if not tc:
@@ -91,13 +90,13 @@ class SceneBuilder:
             event = self._get(self.goal_events, ref, sid)
             v = variant % 3
             if v == 0:
-                return {"type": "goal_pitch", "event": event, **teams}
+                return {"type": "goal_pitch", "event": event, **teams, "goal_index": int(ref if ref.isdigit() else 0)}
             if v == 1:
-                return {"type": "goal", "event": event, "target": self._target_for(event)}
+                return {"type": "goal", "event": event, "target": self._target_for(event), "goal_index": int(ref if ref.isdigit() else 0)}
             p, team = self._player_by_name(event.get("player"))
             if p:
                 return {"type": "player_card", "player": p, "team": team}
-            return {"type": "goal", "event": event, "target": self._target_for(event)}
+            return {"type": "goal", "event": event, "target": self._target_for(event), "goal_index": int(ref if ref.isdigit() else 0)}
 
         if kind == "card":
             return {"type": "card_or_sub", "event": self._get(self.card_sub_events, ref, sid)}
