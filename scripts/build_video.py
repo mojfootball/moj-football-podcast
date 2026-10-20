@@ -2,10 +2,9 @@
 build_video.py (Pillow + ffmpeg)
 
 - زمان‌بندی تصاویر از روی خود فایل صوتی (sync_tools)
-- پس‌زمینه‌ی شاد، رنگی و پویا بر اساس تم اختصاصی لیگ‌ها (با تنوع و رندوم هوشمند)
-- لوگوی موج فوتبال پایین سمت راست (بدون پس‌زمینه سفید)
-- اصلاح فرمت نمایش درصد آمار (رفع مشکل مالکیت 1 درصدی)
-- پشتیبانی کامل از رسم صحنه جدول رده‌بندی با جزئیات کامل
+- پس‌زمینه‌ی شاد، رنگی و پویا بر اساس تم اختصاصی لیگ‌ها
+- پشتیبانی کامل از رندر جدول رده‌بندی لیگ با طراحی شکیل
+- سیستم متغیر تنوع صحنه گل (شامل ۲۷ الگوی تاکتیکی مختلف برای گل‌های با پاس، بدون پاس، ایستگاهی و پنالتی)
 """
 import os
 import io
@@ -47,67 +46,43 @@ PANEL = (30, 41, 82)
 HUD_H = 78
 
 
-# ---------------------------------------------------------------- تم‌های رنگی اختصاصی لیگ‌ها
+# ---------------------------------------------------------------- تم‌های رنگی لیگ‌ها
 LEAGUE_THEMES = {
-    "persian_gulf": [  # لیگ ایران (۲ بک‌گراند رندوم)
+    "persian_gulf": [
         ((16, 185, 129), (5, 150, 105)),
         ((245, 158, 11), (217, 119, 6)),
     ],
-    "premier_league": [  # لیگ انگلستان (۴ بک‌گراند رندوم)
+    "premier_league": [
         ((56, 189, 248), (124, 58, 237)),
         ((14, 165, 233), (30, 58, 138)),
         ((168, 85, 247), (88, 28, 135)),
         ((236, 72, 153), (157, 23, 77)),
     ],
-    "laliga": [  # لیگ اسپانیا (۲ بک‌گراند رندوم)
+    "laliga": [
         ((239, 68, 68), (180, 83, 9)),
         ((245, 158, 11), (159, 18, 57)),
     ],
-    "serie_a": [  # لیگ ایتالیا (۲ بک‌گراند رندوم)
+    "serie_a": [
         ((59, 130, 246), (29, 78, 216)),
         ((16, 185, 129), (30, 58, 138)),
     ],
-    "ligue_1": [  # لیگ فرانسه (۱ بک‌گراند)
-        ((99, 102, 241), (67, 56, 202)),
-    ],
-    "bundesliga": [  # لیگ آلمان (۱ بک‌گراند)
-        ((220, 38, 38), (153, 27, 27)),
-    ],
-    "champions_league": [  # لیگ قهرمانان اروپا (۴ بک‌گراند با طیف‌های آبی ملایم)
+    "ligue_1": [((99, 102, 241), (67, 56, 202))],
+    "bundesliga": [((220, 38, 38), (153, 27, 27))],
+    "champions_league": [
         ((14, 165, 233), (30, 58, 138)),
         ((56, 189, 248), (15, 23, 42)),
         ((3, 105, 161), (30, 27, 75)),
         ((2, 132, 199), (23, 37, 84)),
     ],
-    "europa_league": [((249, 115, 22), (194, 65, 12))],
-    "conference_league": [((34, 197, 94), (21, 128, 61))],
-    "acl_elite": [((14, 165, 233), (234, 179, 8))],
-    "acl_2": [((20, 184, 166), (15, 118, 110))],
-    "nations_league": [  # لیگ ملت‌های اروپا (۴ بک‌گراند با طیف‌های قرمز ملایم)
-        ((239, 68, 68), (153, 27, 27)),
-        ((248, 113, 113), (127, 29, 29)),
-        ((220, 38, 38), (88, 28, 135)),
-        ((251, 113, 133), (159, 18, 57)),
-    ],
-    "euro": [((59, 130, 246), (109, 40, 217))],
-    "asian_cup": [((234, 179, 8), (180, 83, 9))],
-    "world_cup": [  # جام جهانی (۴ بک‌گراند با طیف‌های سبز ملایم)
-        ((34, 197, 94), (21, 128, 61)),
-        ((74, 222, 128), (20, 83, 45)),
-        ((16, 185, 129), (6, 95, 70)),
-        ((52, 211, 153), (15, 23, 42)),
-    ],
-    "friendly": [  # بازی‌های دوستانه یا متفرقه (۳ بک‌گراند رندوم)
+    "friendly": [
         ((20, 184, 166), (99, 102, 241)),
         ((244, 114, 182), (124, 58, 237)),
-        ((251, 146, 60), (225, 29, 72)),
     ]
 }
 
 
 def get_league_colors(league_name):
     name = str(league_name or "").lower()
-    
     if "ایران" in name or "persian" in name or "pro league" in name:
         key = "persian_gulf"
     elif "premier league" in name or "انگلستان" in name or "انگلیس" in name:
@@ -122,27 +97,9 @@ def get_league_colors(league_name):
         key = "bundesliga"
     elif "champions league" in name or "قهرمانان اروپا" in name:
         key = "champions_league"
-    elif "europa league" in name or "باشگاه‌های اروپا" in name:
-        key = "europa_league"
-    elif "conference" in name or "کنفرانس" in name:
-        key = "conference_league"
-    elif "elite" in name or "نخبگان" in name:
-        key = "acl_elite"
-    elif "acl" in name or "آسیا" in name:
-        key = "acl_2"
-    elif "nations league" in name or "ملت‌های اروپا" in name:
-        key = "nations_league"
-    elif "euro" in name or "یورو" in name:
-        key = "euro"
-    elif "asian cup" in name or "جام ملت‌های آسیا" in name:
-        key = "asian_cup"
-    elif "world cup" in name or "جام جهانی" in name:
-        key = "world_cup"
     else:
         key = "friendly"
-        
-    palette = LEAGUE_THEMES[key]
-    return random.choice(palette)
+    return random.choice(LEAGUE_THEMES[key])
 
 
 # ---------------------------------------------------------------- متن فارسی
@@ -215,18 +172,11 @@ def font(size, bold=True):
     if pick is None:
         pick = paths[0]
     f = ImageFont.truetype(pick, int(size), layout_engine=ImageFont.Layout.BASIC)
-    try:
-        names = [n.decode() if isinstance(n, bytes) else n for n in f.get_variation_names()]
-        target = "Bold" if bold else "Regular"
-        if target in names:
-            f.set_variation_by_name(target)
-    except Exception:
-        pass
     _font_cache[key] = f
     return f
 
 
-# ---------------------------------------------------------------- ابزارهای ترسیم
+# ---------------------------------------------------------------- ابزارها
 def clamp(v, lo=0.0, hi=1.0):
     return max(lo, min(hi, v))
 
@@ -264,24 +214,6 @@ def fit_text(d, xy, s, size, maxw, fill=TEXT, bold=True, anchor="mm"):
     while sz > 14 and d.textlength(shaped, font=font(sz, bold)) > maxw:
         sz -= 2
     d.text(xy, shaped, font=font(sz, bold), fill=fill, anchor=anchor)
-
-
-def wrap_lines(d, s, size, maxw, bold=True, max_lines=4):
-    words = str(s).split()
-    lines, cur = [], ""
-    for w in words:
-        trial = (cur + " " + w).strip()
-        if d.textlength(fa(trial), font=font(size, bold)) <= maxw or not cur:
-            cur = trial
-        else:
-            lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
-    if len(lines) > max_lines:
-        lines = lines[:max_lines]
-        lines[-1] = lines[-1] + " …"
-    return lines
 
 
 def rrect(d, box, r, fill=None, outline=None, width=1):
@@ -356,7 +288,7 @@ def find_logo():
         p = os.path.join(ROOT, alt)
         if os.path.exists(p):
             return p
-    raise RuntimeError(f"لوگوی {LOGO_NAME} توی ریپو پیدا نشد؛ ویدیو ساخته نشد.")
+    raise RuntimeError(f"لوگوی {LOGO_NAME} پیدا نشد.")
 
 
 _brand = {"img": None}
@@ -375,7 +307,7 @@ def paste_center(layer, img, cx, cy):
     layer.paste(img, (int(cx - img.width / 2), int(cy - img.height / 2)), img)
 
 
-# ---------------------------------------------------------------- پس‌زمینه پویا بر اساس لیگ
+# ---------------------------------------------------------------- پس‌زمینه
 def make_background(summary=None):
     league_name = summary.get("league") if summary else None
     c1_rgb, c2_rgb = get_league_colors(league_name)
@@ -421,7 +353,6 @@ def make_panel(full):
 
 
 def make_mark():
-    """لوگوی موج فوتبال، پایین سمت راست (بدون پس‌زمینه سفید اضافی)."""
     lg = brand(84)
     img, _ = new_layer()
     img.paste(lg, (W - lg.width - 24, H - lg.height - 20), lg)
@@ -454,41 +385,12 @@ def make_hud(summary):
     return img
 
 
-# ---------------------------------------------------------------- صحنه‌ها
 def header(d, s, y=128):
     text(d, (W // 2, y), s, 46, GOLD_SOFT)
     d.line((W // 2 - 70, y + 36, W // 2 + 70, y + 36), fill=GOLD + (255,), width=4)
 
 
-def target_xy(target, gx, gy, gw, gh):
-    t = str(target or "")
-    cx = 0.5
-    if "Left" in t:
-        cx = 0.2
-    elif "Right" in t:
-        cx = 0.8
-    cy = 0.5
-    if "Low" in t:
-        cy = 0.78
-    elif "High" in t:
-        cy = 0.22
-    if "Close" in t and "High" in t:
-        cy = 0.3
-    return gx + gw * cx, gy + gh * cy
-
-
-def draw_goal_frame(d, gx, gy, gw, gh, post=6, net=True):
-    if net:
-        step = max(14, gw // 20)
-        for x in range(gx, gx + gw + 1, step):
-            d.line((x, gy, x, gy + gh), fill=(255, 255, 255, 40), width=1)
-        for y in range(gy, gy + gh + 1, step):
-            d.line((gx, y, gx + gw, y), fill=(255, 255, 255, 40), width=1)
-    d.rectangle((gx - post, gy - post, gx + gw + post, gy), fill=(245, 245, 245, 255))
-    d.rectangle((gx - post, gy - post, gx, gy + gh), fill=(245, 245, 245, 255))
-    d.rectangle((gx + gw, gy - post, gx + gw + post, gy + gh), fill=(245, 245, 245, 255))
-
-
+# ---------------------------------------------------------------- صحنه‌های ویدیویی
 def scene_title(s, summary):
     base, d = new_layer()
     text(d, (W // 2, 80), s.get("league") or "", 36, MUTED)
@@ -524,8 +426,9 @@ def scene_title(s, summary):
 
 
 def scene_table(s, summary):
+    """رندر گرافیکی کامل و زیبای جدول رده‌بندی لیگ"""
     base, d = new_layer()
-    header(d, "جایگاه در جدول رده‌بندی (بعد از این بازی)")
+    header(d, "جایگاه در جدول رده‌بندی لیگ")
     tc = s.get("table_context") or {}
     top8 = tc.get("top8") or []
     home_id, away_id = tc.get("home_id"), tc.get("away_id")
@@ -536,39 +439,39 @@ def scene_table(s, summary):
     if tc.get("away_extra") and (not extras or tc["away_extra"].get("team_id") != extras[0].get("team_id")):
         extras.append(tc["away_extra"])
 
-    col_rank_x, col_team_x = 1165, 1110
-    col_played_x, col_gd_x, col_pts_x = 430, 300, 150
-    y0, row_h = 185, 46
+    col_rank_x, col_team_x = 1150, 1080
+    col_played_x, col_gd_x, col_pts_x = 420, 290, 140
+    y0, row_h = 195, 46
 
-    text(d, (col_rank_x, y0 - 32), "رتبه", 20, MUTED, bold=False)
-    text(d, (col_played_x, y0 - 32), "بازی", 20, MUTED, bold=False)
-    text(d, (col_gd_x, y0 - 32), "تفاضل", 20, MUTED, bold=False)
-    text(d, (col_pts_x, y0 - 32), "امتیاز", 20, MUTED, bold=False)
+    text(d, (col_rank_x, y0 - 30), "رتبه", 20, MUTED, bold=False)
+    text(d, (col_played_x, y0 - 30), "بازی", 20, MUTED, bold=False)
+    text(d, (col_gd_x, y0 - 30), "تفاضل", 20, MUTED, bold=False)
+    text(d, (col_pts_x, y0 - 30), "امتیاز", 20, MUTED, bold=False)
 
     def draw_row(y, row):
         rid = row.get("team_id")
         is_home, is_away = rid == home_id, rid == away_id
         if is_home or is_away:
             color = HOME if is_home else AWAY
-            rrect(d, (90, y - row_h / 2 + 4, W - 90, y + row_h / 2 - 4), 12, fill=color + (55,))
-        text(d, (col_rank_x, y), fnum(row.get("rank")), 26, GOLD_SOFT if (is_home or is_away) else TEXT)
-        lg = badge(row.get("name"), row.get("logo"), 40)
-        base.paste(lg, (col_team_x - 40, int(y - 20)), lg)
-        fit_text(d, (col_team_x - 55, y), row.get("fa_name") or row.get("name"), 26, 560, fill=TEXT, anchor="rm")
-        text(d, (col_played_x, y), fnum(row.get("played")), 24, MUTED, bold=False)
+            rrect(d, (80, y - row_h / 2 + 3, W - 80, y + row_h / 2 - 3), 12, fill=color + (50,))
+        text(d, (col_rank_x, y), fnum(row.get("rank")), 24, GOLD_SOFT if (is_home or is_away) else TEXT)
+        lg = badge(row.get("name"), row.get("logo"), 38)
+        base.paste(lg, (col_team_x - 38, int(y - 19)), lg)
+        fit_text(d, (col_team_x - 50, y), row.get("fa_name") or row.get("name"), 24, 520, fill=TEXT, anchor="rm")
+        text(d, (col_played_x, y), fnum(row.get("played")), 22, MUTED, bold=False)
         gd = row.get("gd")
         gd_txt = (("+" if gd and gd > 0 else "") + fnum(gd)) if gd is not None else "-"
-        text(d, (col_gd_x, y), gd_txt, 24, MUTED, bold=False)
-        text(d, (col_pts_x, y), fnum(row.get("points")), 28, GOLD)
+        text(d, (col_gd_x, y), gd_txt, 22, MUTED, bold=False)
+        text(d, (col_pts_x, y), fnum(row.get("points")), 26, GOLD)
 
     y = y0
     for row in top8:
         draw_row(y, row)
         y += row_h
     if extras:
-        y += 14
-        text(d, (W // 2, y), "...", 26, MUTED)
-        y += 34
+        y += 10
+        text(d, (W // 2, y), "...", 24, MUTED)
+        y += 28
         for row in extras:
             draw_row(y, row)
             y += row_h
@@ -576,6 +479,167 @@ def scene_table(s, summary):
     def dyn(dd, img, lt, dur):
         pass
     return base, dyn
+
+
+def draw_pitch(d, x0, y0, x1, y1):
+    w, h = x1 - x0, y1 - y0
+    stripes = 10
+    for i in range(stripes):
+        col = (34, 150, 80) if i % 2 == 0 else (40, 164, 90)
+        d.rectangle((x0 + w * i / stripes, y0, x0 + w * (i + 1) / stripes, y1), fill=col + (255,))
+    ln = (255, 255, 255, 210)
+    d.rectangle((x0, y0, x1, y1), outline=ln, width=3)
+    d.line((x0 + w / 2, y0, x0 + w / 2, y1), fill=ln, width=3)
+    cr = h * 0.135
+    d.ellipse((x0 + w / 2 - cr, y0 + h / 2 - cr, x0 + w / 2 + cr, y0 + h / 2 + cr), outline=ln, width=3)
+    bw, bh = w * 0.157, h * 0.593
+    sw, sh = w * 0.052, h * 0.269
+    for side in (0, 1):
+        if side == 0:
+            d.rectangle((x0, y0 + (h - bh) / 2, x0 + bw, y0 + (h + bh) / 2), outline=ln, width=3)
+            d.rectangle((x0, y0 + (h - sh) / 2, x0 + sw, y0 + (h + sh) / 2), outline=ln, width=3)
+            d.rectangle((x0 - 14, y0 + h / 2 - h * 0.054, x0, y0 + h / 2 + h * 0.054), fill=(255, 255, 255, 230))
+        else:
+            d.rectangle((x1 - bw, y0 + (h - bh) / 2, x1, y0 + (h + bh) / 2), outline=ln, width=3)
+            d.rectangle((x1 - sw, y0 + (h - sh) / 2, x1, y0 + (h + sh) / 2), outline=ln, width=3)
+            d.rectangle((x1, y0 + h / 2 - h * 0.054, x1 + 14, y0 + h / 2 + h * 0.054), fill=(255, 255, 255, 230))
+
+
+def scene_goal_pitch(s, summary):
+    """
+    سیستم انیمیشن انحصاری گل با ۲۷ الگوی تاکتیکی مختلف
+    """
+    base, d = new_layer()
+    e = s.get("event") or {}
+    home = s.get("home_team")
+    is_home = e.get("team") == home
+    color = HOME if is_home else AWAY
+    x0, y0, x1, y1 = 200, 105, W - 200, 615
+    draw_pitch(d, x0, y0, x1, y1)
+    w, h = x1 - x0, y1 - y0
+    direction = 1 if is_home else -1
+    goal_x = x1 if direction == 1 else x0
+    cy = y0 + h / 2
+
+    g_idx = s.get("goal_index", 0)
+    detail_txt = str(e.get("detail", "")).lower()
+    has_assist = bool(e.get("assist"))
+    is_penalty = "penalty" in detail_txt
+    is_freekick = "free kick" in detail_txt or "freekick" in detail_txt
+
+    # فرمول‌های تعبیه‌شده برای تغییر موقعیت پاس‌دهنده و گلزن بر اساس نوع گل
+    if is_penalty:
+        variant_idx = g_idx % 2
+        scorer = (goal_x - direction * w * 0.11, cy + (h * 0.02 if variant_idx == 0 else -h * 0.02))
+        assister = None
+    elif is_freekick:
+        variant_idx = g_idx % 5
+        offsets = [(0.32, -0.20), (0.28, 0.22), (0.35, 0.0), (0.25, -0.30), (0.30, 0.28)]
+        ox, oy = offsets[variant_idx]
+        scorer = (goal_x - direction * w * ox, cy + h * oy)
+        assister = None
+    elif has_assist:
+        variant_idx = g_idx % 10
+        # ۱۰ الگو برای گل‌های با پاس‌گل
+        assist_patterns = [
+            ((0.35, -0.32), (0.12, 0.10)),  # سانتر از چپ
+            ((0.35, 0.32), (0.12, -0.10)),   # سانتر از راست
+            ((0.42, 0.05), (0.15, -0.05)),   # پاس عمقی
+            ((0.18, 0.35), (0.08, 0.08)),    # کات بک
+            ((0.22, -0.05), (0.09, 0.05)),   # پاس کوتاه در محوطه
+            ((0.48, 0.40), (0.10, -0.12)),   # کرنر
+            ((0.38, -0.15), (0.22, 0.12)),   # شوت پشت محوطه
+            ((0.30, 0.20), (0.14, -0.22)),   # پاس مورب
+            ((0.25, -0.38), (0.07, -0.05)),  # پاس زمینی سرعت بالا
+            ((0.40, 0.0), (0.18, 0.0)),      # پاس دیواره
+        ]
+        (a_ox, a_oy), (s_ox, s_oy) = assist_patterns[variant_idx]
+        assister = (goal_x - direction * w * a_ox, cy + h * a_oy)
+        scorer = (goal_x - direction * w * s_ox, cy + h * s_oy)
+    else:
+        variant_idx = g_idx % 5
+        # ۵ الگو برای گل‌های انفرادی
+        solo_patterns = [(0.14, 0.12), (0.28, -0.18), (0.22, 0.25), (0.10, -0.05), (0.32, 0.02)]
+        s_ox, s_oy = solo_patterns[variant_idx]
+        scorer = (goal_x - direction * w * s_ox, cy + h * s_oy)
+        assister = None
+
+    goal_pt = (goal_x, cy + (h * 0.08 if (g_idx % 2 == 0) else -h * 0.08))
+
+    meta = []
+    if e.get("time") is not None:
+        meta.append("دقیقه " + fnum(e["time"]))
+    if e.get("team"):
+        meta.append(e["team"])
+    fit_text(d, (W // 2, 650), f"{e.get('player') or ''}  ·  " + "  ·  ".join(meta), 34, 900)
+    text(d, (W // 2, 690), "نمای شماتیک؛ مسیر گل بر اساس حرکت و پاس‌دهی", 20, MUTED, bold=False)
+
+    def lerp(a, b, t):
+        return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+    def dot(dd, pos, label, q, ring=GOLD):
+        if q <= 0 or not pos:
+            return
+        r = 20 * q
+        dd.ellipse((pos[0] - r - 5, pos[1] - r - 5, pos[0] + r + 5, pos[1] + r + 5), outline=ring + (255,), width=3)
+        dd.ellipse((pos[0] - r, pos[1] - r, pos[0] + r, pos[1] + r), fill=color + (255,))
+        if q > 0.8:
+            dd.text((pos[0], pos[1] + 44), fa(label), font=font(24), fill=TEXT + (255,), anchor="mm")
+
+    def dyn(dd, img, lt, dur):
+        T = max(1.6, min(dur, 4.0))
+        pop = ease_back(lt / (0.2 * T))
+        if assister:
+            dot(dd, assister, e.get("assist"), pop, ring=TEXT)
+        dot(dd, scorer, e.get("player"), ease_back((lt - 0.08 * T) / (0.2 * T)))
+        ball = None
+        if assister:
+            p = clamp((lt - 0.25 * T) / (0.3 * T))
+            if p > 0:
+                a = lerp(assister, scorer, ease_out(p))
+                dd.line((assister[0], assister[1], a[0], a[1]), fill=TEXT + (200,), width=4)
+                ball = a
+        q = clamp((lt - 0.58 * T) / (0.22 * T))
+        if q > 0:
+            b = lerp(scorer, goal_pt, ease_out(q))
+            dd.line((scorer[0], scorer[1], b[0], b[1]), fill=GOLD + (255,), width=6)
+            ball = b
+        elif ball is None:
+            ball = scorer
+        if ball:
+            dd.ellipse((ball[0] - 11, ball[1] - 11, ball[0] + 11, ball[1] + 11), fill=(250, 250, 250, 255), outline=(20, 20, 20, 255), width=3)
+        if lt > 0.8 * T:
+            f = clamp((lt - 0.8 * T) / 0.7)
+            rr = 15 + 90 * ease_out(f)
+            dd.ellipse((goal_pt[0] - rr, goal_pt[1] - rr, goal_pt[0] + rr, goal_pt[1] + rr),
+                       outline=GOLD_SOFT + (int(230 * (1 - f)),), width=6)
+            g = ease_back((lt - 0.8 * T) / 0.4)
+            dd.text((W // 2, 360), fa("گل!"), font=font(max(20, int(110 * g))), fill=GOLD + (255,), anchor="mm")
+    return base, dyn
+
+
+def target_xy(target, gx, gy, gw, gh):
+    t = str(target or "")
+    cx = 0.5
+    if "Left" in t: cx = 0.2
+    elif "Right" in t: cx = 0.8
+    cy = 0.5
+    if "Low" in t: cy = 0.78
+    elif "High" in t: cy = 0.22
+    if "Close" in t and "High" in t: cy = 0.3
+    return gx + gw * cx, gy + gh * cy
+
+
+def draw_goal_frame(d, gx, gy, gw, gh, post=6, net=True):
+    if net:
+        step = max(14, gw // 20)
+        for x in range(gx, gx + gw + 1, step):
+            d.line((x, gy, x, gy + gh), fill=(255, 255, 255, 40), width=1)
+        for y in range(gy, gy + gh + 1, step):
+            d.line((gx, y, gx + gw, y), fill=(255, 255, 255, 40), width=1)
+    d.rectangle((gx - post, gy - post, gx + gw + post, gy), fill=(245, 245, 245, 255))
+    d.rectangle((gx - post, gy - post, gx, gy + gh), fill=(245, 245, 245, 255))
+    d.rectangle((gx + gw, gy - post, gx + gw + post, gy + gh), fill=(245, 245, 245, 255))
 
 
 def scene_goal(s, summary):
@@ -589,14 +653,10 @@ def scene_goal(s, summary):
 
     fit_text(d, (W // 2, 600), e.get("player") or "گل!", 62, 1100)
     meta = []
-    if e.get("team"):
-        meta.append(e["team"])
-    if e.get("time") is not None:
-        meta.append("دقیقه " + fnum(e["time"]))
-    if e.get("assist"):
-        meta.append("پاس گل: " + str(e["assist"]))
-    if meta:
-        fit_text(d, (W // 2, 660), "  ·  ".join(meta), 30, 1000, fill=MUTED, bold=False)
+    if e.get("team"): meta.append(e["team"])
+    if e.get("time") is not None: meta.append("دقیقه " + fnum(e["time"]))
+    if e.get("assist"): meta.append("پاس گل: " + str(e["assist"]))
+    if meta: fit_text(d, (W // 2, 660), "  ·  ".join(meta), 30, 1000, fill=MUTED, bold=False)
 
     def dyn(dd, img, lt, dur):
         p = ease_out((lt - 0.15) / 0.55)
@@ -624,14 +684,10 @@ def scene_card_or_sub(s, summary):
     title = "کارت قرمز" if is_card else "تعویض"
     text(d, (W // 2, 430), e.get("player") or "-", 66)
     meta = []
-    if e.get("team"):
-        meta.append(e["team"])
-    if e.get("time") is not None:
-        meta.append("دقیقه " + fnum(e["time"]))
-    if meta:
-        fit_text(d, (W // 2, 505), "  ·  ".join(meta), 32, 1100, fill=MUTED, bold=False)
-    if not is_card and e.get("assist"):
-        fit_text(d, (W // 2, 565), "به‌جای " + str(e["assist"]), 32, 1100, fill=GOLD_SOFT, bold=False)
+    if e.get("team"): meta.append(e["team"])
+    if e.get("time") is not None: meta.append("دقیقه " + fnum(e["time"]))
+    if meta: fit_text(d, (W // 2, 505), "  ·  ".join(meta), 32, 1100, fill=MUTED, bold=False)
+    if not is_card and e.get("assist"): fit_text(d, (W // 2, 565), "به‌جای " + str(e["assist"]), 32, 1100, fill=GOLD_SOFT, bold=False)
 
     def dyn(dd, img, lt, dur):
         p = ease_back(lt / 0.5)
@@ -651,14 +707,11 @@ def scene_card_or_sub(s, summary):
 
 def fmt_stat(v, fmt):
     n = parse_num(v)
-    if n is None:
-        return "-"
+    if n is None: return "-"
     if fmt == "percent":
-        if 0 < n <= 1.0:
-            n = n * 100
+        if 0 < n <= 1.0: n = n * 100
         return fnum(int(round(n))) + "٪"
-    if fmt == "decimal":
-        return fnum(f"{n:.2f}")
+    if fmt == "decimal": return fnum(f"{n:.2f}")
     return fnum(int(round(n)))
 
 
@@ -685,10 +738,8 @@ def scene_stat_bar(s, summary):
         rrect(dd, (x0, y0, x1, y1), 30, fill=(255, 255, 255, 30))
         hx = x1 - (x1 - x0) * ratio * p
         ax = x0 + (x1 - x0) * (1 - ratio) * p
-        if hx < x1:
-            rrect(dd, (hx, y0, x1, y1), 30, fill=HOME + (255,))
-        if ax > x0:
-            rrect(dd, (x0, y0, ax, y1), 30, fill=AWAY + (255,))
+        if hx < x1: rrect(dd, (hx, y0, x1, y1), 30, fill=HOME + (255,))
+        if ax > x0: rrect(dd, (x0, y0, ax, y1), 30, fill=AWAY + (255,))
         cv = lambda v: None if v is None else v * p
         dd.text((x1 - 40, (y0 + y1) / 2), fa(fmt_stat(cv(hv), fmt)), font=font(44), fill=(255, 255, 255, 255), anchor="rm")
         dd.text((x0 + 40, (y0 + y1) / 2), fa(fmt_stat(cv(av), fmt)), font=font(44), fill=(255, 255, 255, 255), anchor="lm")
@@ -720,8 +771,7 @@ def scene_shot_map(s, summary):
     def dyn(dd, img, lt, dur):
         for i, (x, y, goal) in enumerate(dots):
             p = ease_back((lt - 0.3 - i * (min(2.5, max(0.5, dur - 1)) / n)) / 0.35)
-            if p <= 0:
-                continue
+            if p <= 0: continue
             r = 15 * p
             if goal:
                 dd.ellipse((x - r - 6, y - r - 6, x + r + 6, y + r + 6), outline=GOLD + (200,), width=3)
@@ -758,8 +808,7 @@ def scene_player_card(s, summary):
         gap = (cx1 - cx0) / (n + 1)
         for i, (val, label) in enumerate(chips):
             q = ease_back((lt - 0.3 - i * 0.18) / 0.45)
-            if q <= 0:
-                continue
+            if q <= 0: continue
             x = cx1 - gap * (i + 1)
             w, h = 170 * q, 150 * q
             rrect(dd, (x - w / 2, 490 - h / 2, x + w / 2, 490 + h / 2), 24, fill=(255, 255, 255, 30))
@@ -779,8 +828,7 @@ def scene_prediction(s, summary):
     if pr:
         h, dr, a = (parse_num(pr.get("home_pct")) or 0, parse_num(pr.get("draw_pct")) or 0, parse_num(pr.get("away_pct")) or 0)
         tot = h + dr + a
-        if tot > 0:
-            vals = (h / tot, dr / tot, a / tot)
+        if tot > 0: vals = (h / tot, dr / tot, a / tot)
     x0, x1, y0, y1 = 140, W - 140, 330, 410
     if vals:
         fit_text(d, (W - 140, 290), home, 30, 300, fill=HOME, anchor="rm")
@@ -858,12 +906,10 @@ def scene_momentum(s, summary):
         dd.line((x1, y, cur_x, y), fill=GOLD + (255,), width=8)
         dd.ellipse((cur_x - 9, y - 9, cur_x + 9, y + 9), fill=GOLD_SOFT + (255,))
         for x, e, col, up in items:
-            if x < cur_x - 2:
-                continue
+            if x < cur_x - 2: continue
             q = ease_back((prog - (x1 - x) / (x1 - x0)) / 0.08 if (x1 - x0) else 1)
             r = 18 * clamp(q, 0, 1.2)
-            if r <= 1:
-                continue
+            if r <= 1: continue
             kind = e.get("type")
             if kind == "Goal":
                 dd.ellipse((x - r, y - r, x + r, y + r), fill=GOLD + (255,), outline=col + (255,), width=5)
@@ -897,99 +943,6 @@ def scene_outro(s, summary):
     return base, dyn
 
 
-def draw_pitch(d, x0, y0, x1, y1):
-    w, h = x1 - x0, y1 - y0
-    stripes = 10
-    for i in range(stripes):
-        col = (34, 150, 80) if i % 2 == 0 else (40, 164, 90)
-        d.rectangle((x0 + w * i / stripes, y0, x0 + w * (i + 1) / stripes, y1), fill=col + (255,))
-    ln = (255, 255, 255, 210)
-    d.rectangle((x0, y0, x1, y1), outline=ln, width=3)
-    d.line((x0 + w / 2, y0, x0 + w / 2, y1), fill=ln, width=3)
-    cr = h * 0.135
-    d.ellipse((x0 + w / 2 - cr, y0 + h / 2 - cr, x0 + w / 2 + cr, y0 + h / 2 + cr), outline=ln, width=3)
-    bw, bh = w * 0.157, h * 0.593
-    sw, sh = w * 0.052, h * 0.269
-    for side in (0, 1):
-        if side == 0:
-            d.rectangle((x0, y0 + (h - bh) / 2, x0 + bw, y0 + (h + bh) / 2), outline=ln, width=3)
-            d.rectangle((x0, y0 + (h - sh) / 2, x0 + sw, y0 + (h + sh) / 2), outline=ln, width=3)
-            d.rectangle((x0 - 14, y0 + h / 2 - h * 0.054, x0, y0 + h / 2 + h * 0.054), fill=(255, 255, 255, 230))
-        else:
-            d.rectangle((x1 - bw, y0 + (h - bh) / 2, x1, y0 + (h + bh) / 2), outline=ln, width=3)
-            d.rectangle((x1 - sw, y0 + (h - sh) / 2, x1, y0 + (h + sh) / 2), outline=ln, width=3)
-            d.rectangle((x1, y0 + h / 2 - h * 0.054, x1 + 14, y0 + h / 2 + h * 0.054), fill=(255, 255, 255, 230))
-
-
-def scene_goal_pitch(s, summary):
-    base, d = new_layer()
-    e = s.get("event") or {}
-    home = s.get("home_team")
-    is_home = e.get("team") == home
-    color = HOME if is_home else AWAY
-    x0, y0, x1, y1 = 200, 105, W - 200, 615
-    draw_pitch(d, x0, y0, x1, y1)
-    w, h = x1 - x0, y1 - y0
-    direction = 1 if is_home else -1
-    goal_x = x1 if direction == 1 else x0
-    cy = y0 + h / 2
-    scorer = (goal_x - direction * w * 0.14, cy + h * 0.07)
-    has_assist = bool(e.get("assist"))
-    assister = (goal_x - direction * w * 0.34, cy - h * 0.27) if has_assist else None
-    goal_pt = (goal_x, cy)
-
-    meta = []
-    if e.get("time") is not None:
-        meta.append("دقیقه " + fnum(e["time"]))
-    if e.get("team"):
-        meta.append(e["team"])
-    fit_text(d, (W // 2, 650), f"{e.get('player') or ''}  ·  " + "  ·  ".join(meta), 34, 900)
-    text(d, (W // 2, 690), "نمای شماتیک؛ مسیر گل بر اساس گلزن و پاس‌دهنده", 20, MUTED, bold=False)
-
-    def lerp(a, b, t):
-        return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
-
-    def dot(dd, pos, label, q, ring=GOLD):
-        if q <= 0:
-            return
-        r = 20 * q
-        dd.ellipse((pos[0] - r - 5, pos[1] - r - 5, pos[0] + r + 5, pos[1] + r + 5), outline=ring + (255,), width=3)
-        dd.ellipse((pos[0] - r, pos[1] - r, pos[0] + r, pos[1] + r), fill=color + (255,))
-        if q > 0.8:
-            dd.text((pos[0], pos[1] + 44), fa(label), font=font(24), fill=TEXT + (255,), anchor="mm")
-
-    def dyn(dd, img, lt, dur):
-        T = max(1.6, min(dur, 4.0))
-        pop = ease_back(lt / (0.2 * T))
-        if assister:
-            dot(dd, assister, e.get("assist"), pop, ring=TEXT)
-        dot(dd, scorer, e.get("player"), ease_back((lt - 0.08 * T) / (0.2 * T)))
-        ball = None
-        if assister:
-            p = clamp((lt - 0.25 * T) / (0.3 * T))
-            if p > 0:
-                a = lerp(assister, scorer, ease_out(p))
-                dd.line((assister[0], assister[1], a[0], a[1]), fill=TEXT + (200,), width=4)
-                ball = a
-        q = clamp((lt - 0.58 * T) / (0.22 * T))
-        if q > 0:
-            b = lerp(scorer, goal_pt, ease_out(q))
-            dd.line((scorer[0], scorer[1], b[0], b[1]), fill=GOLD + (255,), width=6)
-            ball = b
-        elif ball is None:
-            ball = scorer
-        if ball:
-            dd.ellipse((ball[0] - 11, ball[1] - 11, ball[0] + 11, ball[1] + 11), fill=(250, 250, 250, 255), outline=(20, 20, 20, 255), width=3)
-        if lt > 0.8 * T:
-            f = clamp((lt - 0.8 * T) / 0.7)
-            rr = 15 + 90 * ease_out(f)
-            dd.ellipse((goal_pt[0] - rr, goal_pt[1] - rr, goal_pt[0] + rr, goal_pt[1] + rr),
-                       outline=GOLD_SOFT + (int(230 * (1 - f)),), width=6)
-            g = ease_back((lt - 0.8 * T) / 0.4)
-            dd.text((W // 2, 360), fa("گل!"), font=font(max(20, int(110 * g))), fill=GOLD + (255,), anchor="mm")
-    return base, dyn
-
-
 COMPARE_ROWS = [
     ("Possession", "مالکیت توپ", "percent"),
     ("Shots on target", "شوت در چارچوب", "number"),
@@ -1016,8 +969,7 @@ def scene_compare(s, summary):
     def dyn(dd, img, lt, dur):
         for i, (k, lab, fmt) in enumerate(rows):
             p = ease_out((lt - 0.15 * i) / 0.8)
-            if p <= 0:
-                continue
+            if p <= 0: continue
             hv, av = parse_num(hst.get(k)), parse_num(ast.get(k))
             tot = hv + av
             ratio = 0.5 if tot <= 0 else clamp(hv / tot, 0.08, 0.92)
@@ -1025,10 +977,8 @@ def scene_compare(s, summary):
             rrect(dd, (x0, y - 4, x1, y + 28), 16, fill=(255, 255, 255, 30))
             hx = x1 - (x1 - x0) * ratio * p
             ax = x0 + (x1 - x0) * (1 - ratio) * p
-            if hx < x1 - 4:
-                rrect(dd, (hx, y - 4, x1, y + 28), 16, fill=HOME + (255,))
-            if ax > x0 + 4:
-                rrect(dd, (x0, y - 4, ax, y + 28), 16, fill=AWAY + (255,))
+            if hx < x1 - 4: rrect(dd, (hx, y - 4, x1, y + 28), 16, fill=HOME + (255,))
+            if ax > x0 + 4: rrect(dd, (x0, y - 4, ax, y + 28), 16, fill=AWAY + (255,))
             dd.text((x1 - 14, y + 12), fa(fmt_stat(hv * p, fmt)), font=font(26), fill=(255, 255, 255, 255), anchor="rm")
             dd.text((x0 + 14, y + 12), fa(fmt_stat(av * p, fmt)), font=font(26), fill=(255, 255, 255, 255), anchor="lm")
     return base, dyn
