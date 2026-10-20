@@ -1,10 +1,8 @@
 """
 episode_tools.py
 
-۱) colloquialize: فعل‌ها و کلمات کتابی رو قطعی و بدون وابستگی به Gemini محاوره‌ای می‌کنه
-   (نتوانست → نتونست، را → رو، اما → ولی، ...). قبل از ساخت صدا اجرا می‌شه.
-۲) annotate_scenes: برای هر جمله‌ی گفتگو، تصویری رو انتخاب می‌کنه که دقیقاً با همون موضوع می‌خونه
-   (گل شماره‌ی N، آمار مشخص، بازیکن مشخص، ...). اگه Gemini جواب نداد، برچسب‌های قبلی دست‌نخورده می‌مونن.
+۱) colloquialize: محاوره‌ای‌سازی افعال و اصطلاحات
+۲) annotate_scenes: هماهنگی کامل تصاویر با گفتگوی مجری‌ها
 """
 import os
 import re
@@ -16,7 +14,6 @@ import requests
 ZW = "\u200c"
 _L = "\u0600-\u06FF"
 
-# (کتابی, محاوره‌ای). نیم‌فاصله و فاصله‌ی بعد از «می/نمی» هر دو پشتیبانی می‌شن.
 PAIRS = [
     ("نتوانستند", "نتونستن"), ("نتوانستم", "نتونستم"), ("نتوانست", "نتونست"),
     ("توانستند", "تونستن"), ("توانستم", "تونستم"), ("توانست", "تونست"),
@@ -24,7 +21,7 @@ PAIRS = [
     ("نمی‌توانند", "نمی‌تونن"), ("نمی‌تواند", "نمی‌تونه"), ("نمی‌توانم", "نمی‌تونم"), ("نمی‌توانی", "نمی‌تونی"),
     ("می‌توانستند", "می‌تونستن"), ("می‌توانست", "می‌تونست"),
     ("تازه‌نفس", "پرانرژی"), ("تازه‌نفس‌ها", "پرانرژی‌ها"),
-    ("می‌توانند", "می‌تونن"), ("می‌تواند", "می‌تونه"), ("می‌توانم", "می‌تونم"), ("می‌توانی", "می‌تونی"),
+    ("می‌توانند", "می‌تونن"), ("می‌تواند", "می‌خواد"), ("می‌توانم", "می‌تونم"), ("می‌توانی", "می‌تونی"),
     ("می‌خواهند", "می‌خوان"), ("می‌خواهد", "می‌خواد"), ("نمی‌خواهند", "نمی‌خوان"), ("نمی‌خواهد", "نمی‌خواد"),
     ("خواهد شد", "می‌شه"), ("خواهند شد", "می‌شن"), ("خواهد کرد", "می‌کنه"),
     ("می‌شود", "می‌شه"), ("نمی‌شود", "نمی‌شه"), ("می‌شوند", "می‌شن"), ("می‌باشد", "هست"),
@@ -47,7 +44,6 @@ PAIRS = [
 
 
 def _pat(word):
-    # «‌» (نیم‌فاصله) در الگو اختیاری و با فاصله هم قابل‌تطبیقه
     esc = re.escape(word).replace(ZW, f"[{ZW} ]?")
     return re.compile(rf"(?<![{_L}{ZW}]){esc}(?![{_L}{ZW}])")
 
@@ -68,7 +64,6 @@ def colloquialize(text):
     return t
 
 
-# ---------------------------------------------------------------- هماهنگی تصویر با موضوع صحبت
 GEMINI_MODEL_URL = ("https://generativelanguage.googleapis.com/v1beta/models/"
                     "gemini-2.5-flash:generateContent")
 
@@ -85,6 +80,8 @@ def build_catalog(summary):
     items["momentum"] = "روند کلی بازی روی خط زمان"
     items["compare"] = "مقایسه‌ی کلی آمار دو تیم"
     items["shots"] = "نقشه‌ی شوت‌ها روی دروازه"
+    if summary.get("table_context"):
+        items["table"] = "جدول رده‌بندی کامل لیگ"
     if summary.get("prematch_prediction"):
         items["prediction"] = "پیش‌بینی قبل از بازی و مقایسه با نتیجه"
     for i, e in enumerate(goals):
@@ -99,7 +96,7 @@ def build_catalog(summary):
     for i, (p, team) in enumerate(players):
         items[f"player:{i}"] = f"کارت بازیکن {p.get('name')} ({team})"
     for i, _ in enumerate(summary.get("news_headlines") or []):
-        items[f"news:{i}"] = "تیتر خبر"
+        items[f"news:{i}"] = "تیتر خبر یا واکنش‌های حاشیه‌ای"
     return items
 
 
@@ -115,12 +112,11 @@ def annotate_scenes(turns, summary):
         "RULES:\n"
         "- Use ONLY ids from the catalog.\n"
         "- First turn must be 'title'. Last turn must be 'outro'. 'title' and 'outro' must not be used anywhere else.\n"
-        "- If the turn discusses a specific goal, use the matching goal:N (match by minute, scorer, assister or by the order they are discussed).\n"
+        "- When the hosts discuss the league standings or table, use 'table'.\n"
+        "- When the hosts discuss post-match quotes, media reactions, or headlines, use 'news:N'. If news is NOT mentioned, NEVER use 'news'.\n"
+        "- If the turn discusses a specific goal, use goal:N.\n"
         "- If it discusses a specific statistic, use stat:Key. If it discusses a specific player, use player:N. "
         "Red card/substitution → card:N.\n"
-        "- General discussion of how the game went → momentum, compare, shots, or prediction; rotate for variety.\n"
-        "- Do not repeat the same id in consecutive turns unless the turns are truly about the same thing; "
-        "avoid filler visuals that do not match the speech.\n"
         "- Return ONLY a JSON array with one object per turn: [{\"i\":0,\"scene\":\"title\"}, ...] covering every turn.\n\n"
         "CATALOG (id: description):\n" + json.dumps(catalog, ensure_ascii=False, indent=1) + "\n\n"
         "DIALOGUE TURNS:\n" + json.dumps(payload_turns, ensure_ascii=False)
@@ -159,7 +155,7 @@ def annotate_scenes(turns, summary):
                     t["scene"] = "compare"
             print("برچسب صحنه‌ها با موضوع گفتگو هماهنگ شد:", [t["scene"] for t in turns])
             return turns
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             last_error = e
             print(f"هماهنگی صحنه‌ها تلاش {attempt + 1} ناموفق: {e}")
     print("برچسب‌های اولیه‌ی Gemini حفظ شد:", last_error)
@@ -171,6 +167,6 @@ def finalize_turns(turns, summary):
         t["text"] = colloquialize(t.get("text", ""))
     try:
         turns = annotate_scenes(turns, summary)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print("annotate_scenes خطا داد:", e)
     return turns
