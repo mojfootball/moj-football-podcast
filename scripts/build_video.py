@@ -528,54 +528,42 @@ def scene_goal_pitch(s, summary):
     home = s.get("home_team")
     is_home = e.get("team") == home
     color = HOME if is_home else AWAY
+    
     x0, y0, x1, y1 = 200, 105, W - 200, 615
     draw_pitch(d, x0, y0, x1, y1)
     w, h = x1 - x0, y1 - y0
+    
+    # تعیین جهت حمله بر اساس تیم میزبان یا میهمان
     direction = 1 if is_home else -1
     goal_x = x1 if direction == 1 else x0
     cy = y0 + h / 2
 
     g_idx = s.get("goal_index", 0)
-    detail_txt = str(e.get("detail", "")).lower()
     has_assist = bool(e.get("assist"))
-    is_penalty = "penalty" in detail_txt
-    is_freekick = "free kick" in detail_txt or "freekick" in detail_txt
 
-    if is_penalty:
-        variant_idx = g_idx % 2
-        scorer = (goal_x - direction * w * 0.11, cy + (h * 0.02 if variant_idx == 0 else -h * 0.02))
-        assister = None
-    elif is_freekick:
-        variant_idx = g_idx % 5
-        offsets = [(0.32, -0.20), (0.28, 0.22), (0.35, 0.0), (0.25, -0.30), (0.30, 0.28)]
-        ox, oy = offsets[variant_idx]
-        scorer = (goal_x - direction * w * ox, cy + h * oy)
-        assister = None
-    elif has_assist:
-        variant_idx = g_idx % 10
-        assist_patterns = [
-            ((0.35, -0.32), (0.12, 0.10)),
-            ((0.35, 0.32), (0.12, -0.10)),
-            ((0.42, 0.05), (0.15, -0.05)),
-            ((0.18, 0.35), (0.08, 0.08)),
-            ((0.22, -0.05), (0.09, 0.05)),
-            ((0.48, 0.40), (0.10, -0.12)),
-            ((0.38, -0.15), (0.22, 0.12)),
-            ((0.30, 0.20), (0.14, -0.22)),
-            ((0.25, -0.38), (0.07, -0.05)),
-            ((0.40, 0.0), (0.18, 0.0)),
-        ]
-        (a_ox, a_oy), (s_ox, s_oy) = assist_patterns[variant_idx]
-        assister = (goal_x - direction * w * a_ox, cy + h * a_oy)
-        scorer = (goal_x - direction * w * s_ox, cy + h * s_oy)
-    else:
-        variant_idx = g_idx % 5
-        solo_patterns = [(0.14, 0.12), (0.28, -0.18), (0.22, 0.25), (0.10, -0.05), (0.32, 0.02)]
-        s_ox, s_oy = solo_patterns[variant_idx]
-        scorer = (goal_x - direction * w * s_ox, cy + h * s_oy)
-        assister = None
+    # ۴ الگوی استاندارد و کاملاً دقیق برای جلوگیری از خطای پرتاب توپ به بیرون
+    patterns = [
+        # پترن ۰: سانتر از جناحین + ضربه نهایی دقیق به مرکز دروازه
+        ((goal_x - direction * w * 0.35, cy - h * 0.28), (goal_x - direction * w * 0.12, cy + h * 0.05)),
+        # پترن ۱: پاس عمقی و تک‌به‌تک
+        ((goal_x - direction * w * 0.40, cy), (goal_x - direction * w * 0.15, cy)),
+        # پترن ۲: حرکت انفرادی و شوت از پشت محوطه
+        (None, (goal_x - direction * w * 0.22, cy - h * 0.10)),
+        # پترن ۳: ضربه ایستگاهی یا موقعیت مستقیم
+        (None, (goal_x - direction * w * 0.18, cy + h * 0.12)),
+    ]
 
-    goal_pt = (goal_x, cy + (h * 0.08 if (g_idx % 2 == 0) else -h * 0.08))
+    pat_idx = g_idx % len(patterns)
+    (a_pos, s_pos) = patterns[pat_idx]
+    
+    if not has_assist:
+        a_pos = None
+
+    scorer = s_pos
+    assister = a_pos if has_assist else None
+    
+    # نقطه دقیق ورود توپ به دروازه (مرکز خط دروازه)
+    goal_pt = (goal_x, cy)
 
     meta = []
     if e.get("time") is not None:
@@ -583,7 +571,7 @@ def scene_goal_pitch(s, summary):
     if e.get("team"):
         meta.append(e["team"])
     fit_text(d, (W // 2, 650), f"{e.get('player') or ''}  ·  " + "  ·  ".join(meta), 34, 900)
-    text(d, (W // 2, 690), "نمای شماتیک؛ مسیر گل بر اساس حرکت و پاس‌دهی", 20, MUTED, bold=False)
+    text(d, (W // 2, 690), "طرح تاکتیکی صحنه‌ی گل", 20, MUTED, bold=False)
 
     def lerp(a, b, t):
         return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
@@ -603,6 +591,7 @@ def scene_goal_pitch(s, summary):
         if assister:
             dot(dd, assister, e.get("assist"), pop, ring=TEXT)
         dot(dd, scorer, e.get("player"), ease_back((lt - 0.08 * T) / (0.2 * T)))
+        
         ball = None
         if assister:
             p = clamp((lt - 0.25 * T) / (0.3 * T))
@@ -610,6 +599,7 @@ def scene_goal_pitch(s, summary):
                 a = lerp(assister, scorer, ease_out(p))
                 dd.line((assister[0], assister[1], a[0], a[1]), fill=TEXT + (200,), width=4)
                 ball = a
+                
         q = clamp((lt - 0.58 * T) / (0.22 * T))
         if q > 0:
             b = lerp(scorer, goal_pt, ease_out(q))
@@ -617,8 +607,10 @@ def scene_goal_pitch(s, summary):
             ball = b
         elif ball is None:
             ball = scorer
+            
         if ball:
             dd.ellipse((ball[0] - 11, ball[1] - 11, ball[0] + 11, ball[1] + 11), fill=(250, 250, 250, 255), outline=(20, 20, 20, 255), width=3)
+            
         if lt > 0.8 * T:
             f = clamp((lt - 0.8 * T) / 0.7)
             rr = 15 + 90 * ease_out(f)
@@ -626,7 +618,9 @@ def scene_goal_pitch(s, summary):
                        outline=GOLD_SOFT + (int(230 * (1 - f)),), width=6)
             g = ease_back((lt - 0.8 * T) / 0.4)
             dd.text((W // 2, 360), fa("گل!"), font=font(max(20, int(110 * g))), fill=GOLD + (255,), anchor="mm")
+            
     return base, dyn
+
 
 
 def target_xy(target, gx, gy, gw, gh):
