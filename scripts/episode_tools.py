@@ -165,8 +165,4 @@ def annotate_scenes(turns, summary):
 def finalize_turns(turns, summary):
     for t in turns:
         t["text"] = colloquialize(t.get("text", ""))
-    try:
-        turns = annotate_scenes(turns, summary)
-    except Exception as e:
-        print("annotate_scenes خطا داد:", e)
     return turns
