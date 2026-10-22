@@ -1,10 +1,7 @@
 """
 scene_builder.py
 
-هر صحنه‌ی ویدیو دقیقاً از روی زمان‌بندی صدا ساخته می‌شه.
-شناسه‌ی صحنه:
-    title | outro | momentum | compare | shots | prediction | table
-    goal:N | card:N | stat:Key | player:N | news:N
+مدیریت و تفکیک صحنه‌های ویدیو از روی زمان‌بندی صوتی.
 """
 
 STAT_BY_KEY = {
@@ -88,27 +85,21 @@ class SceneBuilder:
 
         if kind == "goal":
             event = self._get(self.goal_events, ref, sid)
-            v = variant % 3
+            v = variant % 2
             if v == 0:
                 return {"type": "goal_pitch", "event": event, **teams, "goal_index": int(ref if ref.isdigit() else 0)}
-            if v == 1:
-                return {"type": "goal", "event": event, "target": self._target_for(event), "goal_index": int(ref if ref.isdigit() else 0)}
             p, team = self._player_by_name(event.get("player"))
             if p:
                 return {"type": "player_card", "player": p, "team": team}
-            return {"type": "goal", "event": event, "target": self._target_for(event), "goal_index": int(ref if ref.isdigit() else 0)}
+            return {"type": "goal_pitch", "event": event, **teams, "goal_index": int(ref if ref.isdigit() else 0)}
 
         if kind == "card":
             return {"type": "card_or_sub", "event": self._get(self.card_sub_events, ref, sid)}
 
         if kind == "stat":
-            v = variant % 3
+            v = variant % 2
             if v == 1:
                 return self._compare()
-            if v == 2 and self.all_players:
-                p, team = self.all_players[0]
-                return {"type": "player_card", "player": p, "team": team}
-
             if ref not in STAT_BY_KEY:
                 return self._compare()
             label, fmt = STAT_BY_KEY[ref]
@@ -121,7 +112,8 @@ class SceneBuilder:
             return {"type": "player_card", "player": p, "team": team}
 
         if kind == "news":
-            return {"type": "news", "headline": self._get(self.news, ref, sid)}
+            headline_item = self._get(self.news, ref, sid) if self.news else {"title": "حاشیه‌ها و اخبار پیرامون مسابقه"}
+            return {"type": "news", "headline": headline_item}
 
         raise ValueError(f"شناسه‌ی صحنه ناشناخته: {sid}")
 
@@ -138,7 +130,7 @@ def build_scenes(summary, segments):
         visits[sid] = v + 1
         kind = sid.partition(":")[0]
         if kind == "goal" and dur >= 10:
-            n = min(3, int(dur // 4))
+            n = min(2, int(dur // 5))
             plen = dur / n
             for i in range(n):
                 scenes.append({"start": start + i * plen, "end": start + (i + 1) * plen,
