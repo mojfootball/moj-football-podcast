@@ -216,6 +216,24 @@ def fit_text(d, xy, s, size, maxw, fill=TEXT, bold=True, anchor="mm"):
     d.text(xy, shaped, font=font(sz, bold), fill=fill, anchor=anchor)
 
 
+def wrap_lines(d, s, size, maxw, bold=True, max_lines=4):
+    words = str(s).split()
+    lines, cur = [], ""
+    for w in words:
+        trial = (cur + " " + w).strip()
+        if d.textlength(fa(trial), font=font(size, bold)) <= maxw or not cur:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1] + " …"
+    return lines
+
+
 def rrect(d, box, r, fill=None, outline=None, width=1):
     d.rounded_rectangle(box, radius=r, fill=fill, outline=outline, width=width)
 
@@ -426,7 +444,6 @@ def scene_title(s, summary):
 
 
 def scene_table(s, summary):
-    """رندر گرافیکی کامل و زیبای جدول رده‌بندی لیگ"""
     base, d = new_layer()
     header(d, "جایگاه در جدول رده‌بندی لیگ")
     tc = s.get("table_context") or {}
@@ -506,9 +523,6 @@ def draw_pitch(d, x0, y0, x1, y1):
 
 
 def scene_goal_pitch(s, summary):
-    """
-    سیستم انیمیشن انحصاری گل با ۲۷ الگوی تاکتیکی مختلف
-    """
     base, d = new_layer()
     e = s.get("event") or {}
     home = s.get("home_team")
@@ -527,7 +541,6 @@ def scene_goal_pitch(s, summary):
     is_penalty = "penalty" in detail_txt
     is_freekick = "free kick" in detail_txt or "freekick" in detail_txt
 
-    # فرمول‌های تعبیه‌شده برای تغییر موقعیت پاس‌دهنده و گلزن بر اساس نوع گل
     if is_penalty:
         variant_idx = g_idx % 2
         scorer = (goal_x - direction * w * 0.11, cy + (h * 0.02 if variant_idx == 0 else -h * 0.02))
@@ -540,25 +553,23 @@ def scene_goal_pitch(s, summary):
         assister = None
     elif has_assist:
         variant_idx = g_idx % 10
-        # ۱۰ الگو برای گل‌های با پاس‌گل
         assist_patterns = [
-            ((0.35, -0.32), (0.12, 0.10)),  # سانتر از چپ
-            ((0.35, 0.32), (0.12, -0.10)),   # سانتر از راست
-            ((0.42, 0.05), (0.15, -0.05)),   # پاس عمقی
-            ((0.18, 0.35), (0.08, 0.08)),    # کات بک
-            ((0.22, -0.05), (0.09, 0.05)),   # پاس کوتاه در محوطه
-            ((0.48, 0.40), (0.10, -0.12)),   # کرنر
-            ((0.38, -0.15), (0.22, 0.12)),   # شوت پشت محوطه
-            ((0.30, 0.20), (0.14, -0.22)),   # پاس مورب
-            ((0.25, -0.38), (0.07, -0.05)),  # پاس زمینی سرعت بالا
-            ((0.40, 0.0), (0.18, 0.0)),      # پاس دیواره
+            ((0.35, -0.32), (0.12, 0.10)),
+            ((0.35, 0.32), (0.12, -0.10)),
+            ((0.42, 0.05), (0.15, -0.05)),
+            ((0.18, 0.35), (0.08, 0.08)),
+            ((0.22, -0.05), (0.09, 0.05)),
+            ((0.48, 0.40), (0.10, -0.12)),
+            ((0.38, -0.15), (0.22, 0.12)),
+            ((0.30, 0.20), (0.14, -0.22)),
+            ((0.25, -0.38), (0.07, -0.05)),
+            ((0.40, 0.0), (0.18, 0.0)),
         ]
         (a_ox, a_oy), (s_ox, s_oy) = assist_patterns[variant_idx]
         assister = (goal_x - direction * w * a_ox, cy + h * a_oy)
         scorer = (goal_x - direction * w * s_ox, cy + h * s_oy)
     else:
         variant_idx = g_idx % 5
-        # ۵ الگو برای گل‌های انفرادی
         solo_patterns = [(0.14, 0.12), (0.28, -0.18), (0.22, 0.25), (0.10, -0.05), (0.32, 0.02)]
         s_ox, s_oy = solo_patterns[variant_idx]
         scorer = (goal_x - direction * w * s_ox, cy + h * s_oy)
