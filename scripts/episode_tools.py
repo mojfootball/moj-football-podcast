@@ -51,7 +51,6 @@ GEMINI_MODEL_URL = ("https://generativelanguage.googleapis.com/v1beta/models/"
 
 def build_catalog(summary):
     events = summary.get("events") or []
-    # اصلاح خطای پرانتز/کروکت در اینجا
     goals = [e for e in events if e.get("type") == "Goal"]
     cards = [e for e in events if e.get("type") in ("Red Card", "Substitution")]
     players = ([(p, summary["home_team"]) for p in summary.get("home_top_players") or []]
@@ -62,9 +61,8 @@ def build_catalog(summary):
         "momentum": "روند کلی بازی",
         "compare": "مقایسه‌ی آمار دو تیم",
         "shots": "نقشه‌ی شوت‌ها",
+        "table": "جدول رده‌بندی کامل لیگ شامل تمامی آمار برد، باخت و امتیازات",
     }
-    if summary.get("table_context"):
-        items["table"] = "جدول رده‌بندی لیگ"
     if summary.get("news_headlines"):
         items["news:0"] = "تیتر اخبار و حاشیه‌ها"
     for i, e in enumerate(goals):
