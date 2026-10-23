@@ -46,12 +46,11 @@ def colloquialize(text):
 
 
 GEMINI_MODEL_URL = ("https://generativelanguage.googleapis.com/v1beta/models/"
-                    "gemini-flash-latest:generateContent")
+                    "gemini-flash-lite-latest:generateContent")
 
 
 def build_catalog(summary):
     events = summary.get("events") or []
-    # اصلاح دقیق پرانتزها و براکت‌ها
     goals = [e for e in events if e.get("type") == "Goal"]
     cards = [e for e in events if e.get("type") in ("Red Card", "Substitution")]
     players = ([(p, summary["home_team"]) for p in summary.get("home_top_players") or []]
@@ -96,6 +95,7 @@ def annotate_scenes(turns, summary):
     chosen = {}
     for attempt in range(3):
         try:
+            time.sleep(3 * (attempt + 1))  # جلوگیری از ارور 429 با ایجاد وقفه
             resp = requests.post(
                 f"{GEMINI_MODEL_URL}?key={key}",
                 json={"contents": [{"parts": [{"text": prompt}]}],
@@ -130,4 +130,3 @@ def finalize_turns(turns, summary):
     except Exception as e:
         print("annotate_scenes خطا داد:", e)
     return turns
-    
