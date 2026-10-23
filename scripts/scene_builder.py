@@ -18,8 +18,9 @@ class SceneBuilder:
     def __init__(self, summary):
         self.summary = summary
         events = summary.get("events") or []
-        self.goal_events = [e for e in events if e.get("type"] == "Goal"]
-        self.card_sub_events = [e for e in events if e.get("type"] in ("Red Card", "Substitution"))
+        # اصلاح خطای تایپی در اینجا
+        self.goal_events = [e for e in events if e.get("type") == "Goal"]
+        self.card_sub_events = [e for e in events if e.get("type") in ("Red Card", "Substitution")]
         self.all_players = (
             [(p, summary["home_team"]) for p in summary.get("home_top_players") or []]
             + [(p, summary["away_team"]) for p in summary.get("away_top_players") or []]
@@ -67,7 +68,6 @@ class SceneBuilder:
             if not tc or not tc.get("top8"):
                 home_t = s.get("home_team") or "میزبان"
                 away_t = s.get("away_team") or "میهمان"
-                # ساخت جدول اختصاصی برای مسابقه جاری بر اساس تیم‌های خود بازی
                 tc = {
                     "top8": [
                         {"rank": 1, "team_id": 101, "name": home_t, "fa_name": home_t, "logo": s.get("home_logo"), "played": 6, "won": 4, "drawn": 1, "lost": 1, "gf": 12, "ga": 5, "gd": 7, "points": 13},
