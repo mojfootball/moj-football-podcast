@@ -724,7 +724,7 @@ def scene_card_or_sub(s, summary):
     e = s.get("event") or {}
     is_card = e.get("type") == "Red Card"
     color = AWAY if is_card else HOME
-    title = "کارت قرمز" if is_card else "تعویض"
+    title = "کارت قرمز" if is_card else "کارت زرد"
     text(d, (W // 2, 430), e.get("player") or "-", 66)
     meta = []
     if e.get("team"): meta.append(e["team"])
@@ -935,20 +935,32 @@ def scene_momentum(s, summary):
     home, away = s.get("home_team"), s.get("away_team")
 
     items = []
-    row = 0
-    for e in sorted(events, key=lambda e: parse_minute(e.get("time"))):
+    sorted_events = sorted(events, key=lambda e: parse_minute(e.get("time")))
+    
+    last_x = -999
+    tier = 0
+    # ۵ سطح ارتفاع کاملاً مجزا برای جلوگیری از برخورد متون
+    tiers = [-70, -120, -170, 75, 125]
+
+    for e in sorted_events:
         x = x1 - (x1 - x0) * parse_minute(e.get("time")) / last
         col = HOME if e.get("team") == home else AWAY if e.get("team") == away else MUTED
-        up = (row % 2 == 0)
-        row += 1
-        items.append((x, e, col, up))
+        
+        if abs(x - last_x) < 110:
+            tier = (tier + 1) % len(tiers)
+        else:
+            tier = 0 if parse_minute(e.get("time")) % 2 == 0 else 3
+            
+        offset_y = tiers[tier]
+        items.append((x, e, col, offset_y))
+        last_x = x
 
     def dyn(dd, img, lt, dur):
         prog = clamp((lt - 0.2) / max(0.5, min(dur, 10.0) * 0.7))
         cur_x = x1 - (x1 - x0) * prog
         dd.line((x1, y, cur_x, y), fill=GOLD + (255,), width=8)
         dd.ellipse((cur_x - 9, y - 9, cur_x + 9, y + 9), fill=GOLD_SOFT + (255,))
-        for x, e, col, up in items:
+        for x, e, col, offset_y in items:
             if x < cur_x - 2: continue
             q = ease_back((prog - (x1 - x) / (x1 - x0)) / 0.08 if (x1 - x0) else 1)
             r = 18 * clamp(q, 0, 1.2)
@@ -962,11 +974,12 @@ def scene_momentum(s, summary):
                 a = r * 0.75
                 dd.polygon([(x, y - a), (x + a, y), (x, y + a), (x - a, y)], fill=col + (255,))
             if q > 0.8 and kind in ("Goal", "Red Card"):
-                ty = y - 70 if up else y + 90
-                dd.line((x, y - r - 2 if up else y + r + 2, x, ty + (26 if up else -26)), fill=(255, 255, 255, 90), width=2)
-                dd.text((x, ty), fa(str(e.get("player") or "")), font=font(24), fill=TEXT + (255,), anchor="mm")
-                dd.text((x, ty + 28), fa(fnum(e.get("time")) + "'"), font=font(20, False), fill=MUTED + (255,), anchor="mm")
+                ty = y + offset_y
+                dd.line((x, y - r - 2 if offset_y < 0 else y + r + 2, x, ty + (-15 if offset_y < 0 else 15)), fill=(255, 255, 255, 90), width=2)
+                dd.text((x, ty), fa(str(e.get("player") or "")), font=font(22), fill=TEXT + (255,), anchor="mm")
+                dd.text((x, ty + 24), fa(fnum(e.get("time")) + "'"), font=font(18, False), fill=MUTED + (255,), anchor="mm")
     return base, dyn
+
 
 
 def scene_outro(s, summary):
