@@ -18,7 +18,6 @@ class SceneBuilder:
     def __init__(self, summary):
         self.summary = summary
         events = summary.get("events") or []
-        # اصلاح خطای تایپی در اینجا
         self.goal_events = [e for e in events if e.get("type") == "Goal"]
         self.card_sub_events = [e for e in events if e.get("type") in ("Red Card", "Substitution")]
         self.all_players = (
@@ -35,6 +34,17 @@ class SceneBuilder:
         if not (0 <= i < len(items)):
             raise ValueError(f"شناسه‌ی صحنه خارج از محدوده: {sid}")
         return items[i]
+
+    def _player_by_name(self, name):
+        """جستجوی اطلاعات بازیکن بر اساس نام"""
+        if not name:
+            return None, None
+        name_lower = name.lower()
+        for p, team in self.all_players:
+            p_name = p.get("name", "").lower()
+            if p_name and (p_name in name_lower or name_lower in p_name):
+                return p, team
+        return None, None
 
     def _compare(self):
         s = self.summary
