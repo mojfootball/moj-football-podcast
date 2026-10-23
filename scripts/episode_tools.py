@@ -51,8 +51,9 @@ GEMINI_MODEL_URL = ("https://generativelanguage.googleapis.com/v1beta/models/"
 
 def build_catalog(summary):
     events = summary.get("events") or []
-    goals = [e for e in events if e.get("type"] == "Goal"]
-    cards = [e for e in events if e.get("type"] in ("Red Card", "Substitution")]
+    # اصلاح خطای پرانتز/کروکت در اینجا
+    goals = [e for e in events if e.get("type") == "Goal"]
+    cards = [e for e in events if e.get("type") in ("Red Card", "Substitution")]
     players = ([(p, summary["home_team"]) for p in summary.get("home_top_players") or []]
                + [(p, summary["away_team"]) for p in summary.get("away_top_players") or []])
     items = {
