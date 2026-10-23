@@ -444,8 +444,9 @@ def scene_title(s, summary):
 
 
 def scene_table(s, summary):
+    """رندر گرافیکی کامل جدول رده‌بندی دقیقا شبیه به نمونه کارشناسی تلویزیونی"""
     base, d = new_layer()
-    header(d, "جایگاه در جدول رده‌بندی لیگ")
+    header(d, "جدول رده‌بندی لیگ")
     tc = s.get("table_context") or {}
     top8 = tc.get("top8") or []
     home_id, away_id = tc.get("home_id"), tc.get("away_id")
@@ -456,38 +457,74 @@ def scene_table(s, summary):
     if tc.get("away_extra") and (not extras or tc["away_extra"].get("team_id") != extras[0].get("team_id")):
         extras.append(tc["away_extra"])
 
-    col_rank_x, col_team_x = 1150, 1080
-    col_played_x, col_gd_x, col_pts_x = 420, 290, 140
+    # موقعیت افقی دقیق ستون‌ها (از راست به چپ)
+    col_rank_x   = 1180  # #
+    col_team_x   = 1120  # تیم
+    col_played_x = 680   # بازی
+    col_won_x    = 600   # برد
+    col_drawn_x  = 520   # مساوی
+    col_lost_x   = 440   # باخت
+    col_gf_x     = 360   # گل زده
+    col_ga_x     = 280   # گل خورده
+    col_gd_x     = 200   # تفاضل
+    col_pts_x    = 110   # امتیاز
+
     y0, row_h = 195, 46
 
-    text(d, (col_rank_x, y0 - 30), "رتبه", 20, MUTED, bold=False)
+    # هدر ستون‌های جدول
+    text(d, (col_rank_x, y0 - 30), "#", 20, MUTED, bold=False)
+    text(d, (col_team_x - 40, y0 - 30), "تیم", 20, MUTED, bold=False, anchor="rm")
     text(d, (col_played_x, y0 - 30), "بازی", 20, MUTED, bold=False)
+    text(d, (col_won_x, y0 - 30), "برد", 20, MUTED, bold=False)
+    text(d, (col_drawn_x, y0 - 30), "مساوی", 20, MUTED, bold=False)
+    text(d, (col_lost_x, y0 - 30), "باخت", 20, MUTED, bold=False)
+    text(d, (col_gf_x, y0 - 30), "زد", 20, MUTED, bold=False)
+    text(d, (col_ga_x, y0 - 30), "خورده", 20, MUTED, bold=False)
     text(d, (col_gd_x, y0 - 30), "تفاضل", 20, MUTED, bold=False)
     text(d, (col_pts_x, y0 - 30), "امتیاز", 20, MUTED, bold=False)
+
+    # خط جداکننده زیر هدر
+    d.line((60, y0 - 10, W - 60, y0 - 10), fill=(255, 255, 255, 60), width=2)
 
     def draw_row(y, row):
         rid = row.get("team_id")
         is_home, is_away = rid == home_id, rid == away_id
+        
+        # هایلایت رنگی برای دو تیم مسابقه
         if is_home or is_away:
             color = HOME if is_home else AWAY
-            rrect(d, (80, y - row_h / 2 + 3, W - 80, y + row_h / 2 - 3), 12, fill=color + (50,))
-        text(d, (col_rank_x, y), fnum(row.get("rank")), 24, GOLD_SOFT if (is_home or is_away) else TEXT)
-        lg = badge(row.get("name"), row.get("logo"), 38)
-        base.paste(lg, (col_team_x - 38, int(y - 19)), lg)
-        fit_text(d, (col_team_x - 50, y), row.get("fa_name") or row.get("name"), 24, 520, fill=TEXT, anchor="rm")
-        text(d, (col_played_x, y), fnum(row.get("played")), 22, MUTED, bold=False)
+            rrect(d, (60, y - row_h / 2 + 3, W - 60, y + row_h / 2 - 3), 12, fill=color + (60,), outline=color + (200,), width=2)
+            
+        # رتبه
+        text(d, (col_rank_x, y), fnum(row.get("rank")), 22, GOLD_SOFT if (is_home or is_away) else TEXT)
+        
+        # لوگو و اسم تیم
+        lg = badge(row.get("name"), row.get("logo"), 36)
+        base.paste(lg, (col_team_x - 36, int(y - 18)), lg)
+        fit_text(d, (col_team_x - 48, y), row.get("fa_name") or row.get("name"), 22, 340, fill=TEXT, anchor="rm")
+        
+        # آمار و ارقام عددی
+        text(d, (col_played_x, y), fnum(row.get("played") if row.get("played") is not None else "-"), 22, MUTED, bold=False)
+        text(d, (col_won_x, y), fnum(row.get("won") if row.get("won") is not None else "-"), 22, MUTED, bold=False)
+        text(d, (col_drawn_x, y), fnum(row.get("drawn") if row.get("drawn") is not None else "-"), 22, MUTED, bold=False)
+        text(d, (col_lost_x, y), fnum(row.get("lost") if row.get("lost") is not None else "-"), 22, MUTED, bold=False)
+        text(d, (col_gf_x, y), fnum(row.get("gf") if row.get("gf") is not None else "-"), 22, MUTED, bold=False)
+        text(d, (col_ga_x, y), fnum(row.get("ga") if row.get("ga") is not None else "-"), 22, MUTED, bold=False)
+        
         gd = row.get("gd")
         gd_txt = (("+" if gd and gd > 0 else "") + fnum(gd)) if gd is not None else "-"
         text(d, (col_gd_x, y), gd_txt, 22, MUTED, bold=False)
-        text(d, (col_pts_x, y), fnum(row.get("points")), 26, GOLD)
+        
+        # امتیاز
+        text(d, (col_pts_x, y), fnum(row.get("points") if row.get("points") is not None else "-"), 26, GOLD)
 
-    y = y0
+    y = y0 + 15
     for row in top8:
         draw_row(y, row)
         y += row_h
+        
     if extras:
-        y += 10
-        text(d, (W // 2, y), "...", 24, MUTED)
+        text(d, (W // 2, y - 5), "...", 24, MUTED)
         y += 28
         for row in extras:
             draw_row(y, row)
@@ -496,6 +533,7 @@ def scene_table(s, summary):
     def dyn(dd, img, lt, dur):
         pass
     return base, dyn
+
 
 
 def draw_pitch(d, x0, y0, x1, y1):
