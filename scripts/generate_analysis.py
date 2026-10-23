@@ -5,10 +5,15 @@ import requests
 from fetch_standings import get_table_context
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"].strip()
-GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-flash-latest:generateContent"
-)
+
+# لیست مدل‌های اولویت‌بندی شده برای جلوگیری از خطای 503
+MODELS_TO_TRY = [
+    "gemini-flash-latest",
+    "gemini-2.5-flash",
+    "gemini-flash-lite-latest",
+]
+
+BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent"
 
 
 def summarize_match(details):
@@ -125,25 +130,46 @@ def generate_persian_script(summary):
     prompt = "\n".join(lines)
 
     last_error = None
+
+    # ۵ تلاش با بازه زمانی صعودی و سوئیچ بین مدل‌ها
     for attempt in range(5):
         if attempt > 0:
-            time.sleep(10 * attempt)
-        try:
-            resp = requests.post(
-                f"{GEMINI_URL}?key={GEMINI_API_KEY}",
-                json={
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"response_mime_type": "application/json"},
-                },
-                timeout=60,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
-            from episode_tools import finalize_turns
-            return finalize_turns(json.loads(raw_text), summary)
-        except requests.RequestException as e:
-            last_error = e
-            print(f"تلاش {attempt + 1} ناموفق بود: {e}")
+            sleep_time = 12 * attempt
+            print(f"کمی صبر می‌کنیم ({sleep_time} ثانیه) قبل از تلاش مجدد...")
+            time.sleep(sleep_time)
+
+        for model in MODELS_TO_TRY:
+            url = BASE_URL.format(model)
+            try:
+                print(f"ارسال درخواست به Gemini با مدل {model} (تلاش {attempt + 1})...")
+                resp = requests.post(
+                    f"{url}?key={GEMINI_API_KEY}",
+                    json={
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {"response_mime_type": "application/json"},
+                    },
+                    timeout=90,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                from episode_tools import finalize_turns
+                return finalize_turns(json.loads(raw_text), summary)
+            except requests.RequestException as e:
+                last_error = e
+                print(f"مدل {model} در تلاش {attempt + 1} با خطا مواجه شد: {e}")
 
     raise last_error
+
+
+if __name__ == "__main__":
+    import sys
+    from fetch_match_details import get_match_details
+
+    match_id = int(sys.argv[1])
+    details = get_match_details(match_id)
+    summary = summarize_match(details)
+    turns = generate_persian_script(summary)
+    for turn in turns:
+        label = "🎙️ ماهور" if turn["speaker"] == "female" else "🎙️ مجتبآ"
+        print(f"[{turn.get('scene')}] {label}: {turn['text']}\n")
