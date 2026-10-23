@@ -51,8 +51,9 @@ GEMINI_MODEL_URL = ("https://generativelanguage.googleapis.com/v1beta/models/"
 
 def build_catalog(summary):
     events = summary.get("events") or []
-    goals = [e for e in events if e.get("type"] == "Goal"]
-    cards = [e for e in events if e.get("type"] in ("Red Card", "Substitution"))
+    # اصلاح دقیق پرانتزها و براکت‌ها
+    goals = [e for e in events if e.get("type") == "Goal"]
+    cards = [e for e in events if e.get("type") in ("Red Card", "Substitution")]
     players = ([(p, summary["home_team"]) for p in summary.get("home_top_players") or []]
                + [(p, summary["away_team"]) for p in summary.get("away_top_players") or []])
     items = {
@@ -111,7 +112,6 @@ def annotate_scenes(turns, summary):
     for i, t in enumerate(turns):
         t["scene"] = chosen.get(i, "compare")
 
-    # تضمین اجباری وجود حداقل یک صحنه جدول در نیمه‌ی دوم گفتگو
     has_table = any(t.get("scene") == "table" for t in turns)
     if not has_table and len(turns) > 4:
         mid_idx = len(turns) // 2
@@ -130,3 +130,4 @@ def finalize_turns(turns, summary):
     except Exception as e:
         print("annotate_scenes خطا داد:", e)
     return turns
+    
