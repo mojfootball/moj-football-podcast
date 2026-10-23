@@ -51,8 +51,8 @@ GEMINI_MODEL_URL = ("https://generativelanguage.googleapis.com/v1beta/models/"
 
 def build_catalog(summary):
     events = summary.get("events") or []
-    goals = [e for e in events if e.get("type") == "Goal"]
-    cards = [e for e in events if e.get("type") in ("Red Card", "Substitution")]
+    goals = [e for e in events if e.get("type"] == "Goal"]
+    cards = [e for e in events if e.get("type"] in ("Red Card", "Substitution"))
     players = ([(p, summary["home_team"]) for p in summary.get("home_top_players") or []]
                + [(p, summary["away_team"]) for p in summary.get("away_top_players") or []])
     items = {
@@ -61,7 +61,7 @@ def build_catalog(summary):
         "momentum": "روند کلی بازی",
         "compare": "مقایسه‌ی آمار دو تیم",
         "shots": "نقشه‌ی شوت‌ها",
-        "table": "جدول رده‌بندی کامل لیگ شامل تمامی آمار برد، باخت و امتیازات",
+        "table": "جدول رده‌بندی لیگ",
     }
     if summary.get("news_headlines"):
         items["news:0"] = "تیتر اخبار و حاشیه‌ها"
@@ -86,13 +86,13 @@ def annotate_scenes(turns, summary):
         "RULES:\n"
         "- Use ONLY ids from the catalog keys.\n"
         "- First turn must be 'title'. Last turn must be 'outro'.\n"
-        "- When the hosts discuss league standings or table, use 'table'.\n"
+        "- When the hosts discuss league standings, table, position, or points, YOU MUST use 'table'.\n"
         "- When the hosts discuss news, quotes, or post-match headlines, use 'news:0'.\n"
-        "- When discussing goals, use goal:N.\n"
         "- Return ONLY a JSON array with one object per turn: [{\"i\":0,\"scene\":\"title\"}, ...]\n\n"
         "CATALOG:\n" + json.dumps(catalog, ensure_ascii=False, indent=1) + "\n\n"
         "DIALOGUE:\n" + json.dumps(payload_turns, ensure_ascii=False)
     )
+    chosen = {}
     for attempt in range(3):
         try:
             resp = requests.post(
@@ -104,13 +104,21 @@ def annotate_scenes(turns, summary):
             resp.raise_for_status()
             data = json.loads(resp.json()["candidates"][0]["content"]["parts"][0]["text"])
             chosen = {row["i"]: row["scene"] for row in data if "i" in row and "scene" in row}
-            for i, t in enumerate(turns):
-                t["scene"] = chosen.get(i, "compare")
-            turns[0]["scene"] = "title"
-            turns[-1]["scene"] = "outro"
-            return turns
+            break
         except Exception as e:
-            print(f"تلاش {attempt + 1} ناموفق: {e}")
+            print(f"تلاش {attempt + 1} برای برچسب‌زنی صحنه‌ها ناموفق: {e}")
+
+    for i, t in enumerate(turns):
+        t["scene"] = chosen.get(i, "compare")
+
+    # تضمین اجباری وجود حداقل یک صحنه جدول در نیمه‌ی دوم گفتگو
+    has_table = any(t.get("scene") == "table" for t in turns)
+    if not has_table and len(turns) > 4:
+        mid_idx = len(turns) // 2
+        turns[mid_idx]["scene"] = "table"
+
+    turns[0]["scene"] = "title"
+    turns[-1]["scene"] = "outro"
     return turns
 
 
