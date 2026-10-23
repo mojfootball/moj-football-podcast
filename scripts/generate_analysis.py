@@ -6,10 +6,9 @@ from fetch_standings import get_table_context
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"].strip()
 
-# لیست مدل‌های اولویت‌بندی شده برای جلوگیری از خطای 503
+# فقط مدل‌های معتبر و فعال
 MODELS_TO_TRY = [
     "gemini-flash-latest",
-    "gemini-2.5-flash",
     "gemini-flash-lite-latest",
 ]
 
@@ -131,7 +130,6 @@ def generate_persian_script(summary):
 
     last_error = None
 
-    # ۵ تلاش با بازه زمانی صعودی و سوئیچ بین مدل‌ها
     for attempt in range(5):
         if attempt > 0:
             sleep_time = 12 * attempt
