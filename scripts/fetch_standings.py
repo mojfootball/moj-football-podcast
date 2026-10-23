@@ -78,8 +78,13 @@ def _row(row):
         "name": team.get("name"),
         "logo": team.get("logo"),
         "played": total.get("games"),
-        "points": row.get("points"),
+        "won": total.get("won"),
+        "drawn": total.get("drawn"),
+        "lost": total.get("lost"),
+        "gf": gf,
+        "ga": ga,
         "gd": gd,
+        "points": row.get("points"),
     }
 
 
