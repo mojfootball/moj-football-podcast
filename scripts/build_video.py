@@ -724,7 +724,7 @@ def scene_card_or_sub(s, summary):
     e = s.get("event") or {}
     is_card = e.get("type") == "Red Card"
     color = AWAY if is_card else HOME
-    title = "کارت قرمز" if is_card else "تعویض بازیکن"
+    title = "کارت قرمز" if is_card else "تعویض"
     text(d, (W // 2, 430), e.get("player") or "-", 66)
     meta = []
     if e.get("team"): meta.append(e["team"])
