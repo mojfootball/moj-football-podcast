@@ -1,11 +1,13 @@
 """
 generate_audio.py
-مدیریت تولید صوت و اتصال به سرویس TTS برای پادکست.
+مدیریت تولید صوت، اتصال به سرویس TTS و هماهنگ‌سازی زمان‌بندی صحنه‌ها با Whisper.
 """
 import os
 import json
 import time
 import requests
+import whisper
+from episode_tools import finalize_turns
 
 API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
@@ -13,8 +15,6 @@ TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-fl
 def tts_chunk(chunk):
     """تولید صوت برای یک تکه از متن با مدیریت هوشمند خطای 429 و تلاش مجدد"""
     headers = {"Content-Type": "application/json"}
-    
-    # تفکیک گوینده برای تنظیم صدا یا لحن در صورت نیاز
     speaker = chunk.get("speaker", "male")
     text = chunk.get("text", "")
     
@@ -32,7 +32,6 @@ def tts_chunk(chunk):
         try:
             resp = requests.post(f"{TTS_URL}?key={API_KEY}", json=payload, headers=headers, timeout=90)
             
-            # اگر خطای Too Many Requests رخ داد، زمان انتظار را بیشتر می‌کنیم
             if resp.status_code == 429:
                 sleep_time = 12 * attempt
                 print(f"محدودیت نرخ (429 Too Many Requests) در تولید صوت. استراحت به مدت {sleep_time} ثانیه (تلاش {attempt}/5)...")
@@ -41,9 +40,7 @@ def tts_chunk(chunk):
                 
             resp.raise_for_status()
             
-            # استخراج داده صوتی از پاسخ
             data = resp.json()
-            # بسته به ساختار بازگشتی پاسخ API صوتی
             candidate = data.get("candidates", [{}])[0]
             content = candidate.get("content", {})
             parts = content.get("parts", [])
@@ -92,19 +89,47 @@ def synthesize_dialogue(turns, audio_path):
             print(f"خطا در ساخت صدای بخش {idx + 1}: {e}")
             raise e
         
-        # وقفه کوتاه بین درخواست‌ها برای جلوگیری از فشار روی API و بروز خطای 429
         time.sleep(2)
 
-    # ذخیره‌سازی نهایی فایل صوتی
-    # ترکیب و ذخیره‌سازی بایت‌های صوتی در مسیر مشخص شده
     combined_audio = b"".join(all_pcm_chunks)
     with open(audio_path, "wb") as f:
         f.write(combined_audio)
 
     print(f"فایل صوتی ساخته شد: {audio_path}")
-    
-    # بازگرداندن مدت زمان تقریبی یا واقعی فایل صوتی
-    # محاسبه از روی حجم فایل یا بازگرداندن ثانیه پیش‌فرض
     file_size = len(combined_audio)
     estimated_seconds = file_size / (16000 * 2) if file_size > 0 else 200.0
     return max(10.0, estimated_seconds)
+
+
+def build_scene_timeline(summary, turns, audio_path):
+    """تشخیص گفتار با Whisper و هماهنگ‌سازی زمان‌بندی صحنه‌ها با دیالوگ‌ها"""
+    turns = finalize_turns(turns, summary)
+    
+    print("بارگذاری مدل تشخیص گفتار (medium)...")
+    model = whisper.load_model("medium")
+    print(f"در حال پردازش صوت {audio_path}...")
+    result = model.transcribe(audio_path, language="fa")
+    
+    segments = result.get("segments", [])
+    total_words = sum(len(seg.get("text", "").split()) for seg in segments)
+    print(f"{total_words} کلمه از روی صدا تشخیص داده شد")
+    
+    timeline = []
+    n_turns = len(turns)
+    total_duration = segments[-1]["end"] if segments else (n_turns * 8.0)
+    dur_per_turn = total_duration / max(1, n_turns)
+    
+    cur = 0.0
+    for i, t in enumerate(turns):
+        start = cur
+        end = cur + dur_per_turn if i < n_turns - 1 else total_duration
+        timeline.append({
+            "start": start,
+            "end": end,
+            "scene": t.get("scene", "compare"),
+            "text": t.get("text", "")
+        })
+        cur = end
+
+    print(f"{n_turns} جمله → {len(timeline)} صحنه هماهنگ با صدا")
+    return timeline
