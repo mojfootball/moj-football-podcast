@@ -25,6 +25,7 @@ from bidi.algorithm import get_display
 
 from scene_builder import build_scenes
 import sync_tools
+import scene_extras
 
 # ---------------------------------------------------------------- تنظیمات
 W, H = 1280, 720
@@ -1040,11 +1041,19 @@ def scene_compare(s, summary):
     return base, dyn
 
 
+def _extras(fn):
+    def run(s, summary):
+        return fn(s, summary, sys.modules[__name__])
+    return run
+
+
 SCENES = {
     "title": scene_title, "goal": scene_goal, "card_or_sub": scene_card_or_sub, "stat_bar": scene_stat_bar,
     "shot_map": scene_shot_map, "player_card": scene_player_card, "prediction": scene_prediction,
     "news": scene_news, "momentum": scene_momentum, "outro": scene_outro,
-    "goal_pitch": scene_goal_pitch, "compare": scene_compare, "table": scene_table,
+    "goal_pitch": scene_goal_pitch, "compare": scene_compare,
+    "table": _extras(scene_extras.scene_table),
+    "cards": _extras(scene_extras.scene_cards),
 }
 NO_HUD = {"title", "outro"}
 NO_MARK = {"outro"}
