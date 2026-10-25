@@ -1,66 +1,79 @@
 """
 generate_audio.py
-مدیریت تولید صوت با استفاده از سرویس صوتی پایدار گوگل (gTTS مستقیم) و ffmpeg، به همراه هماهنگ‌سازی زمان‌بندی صحنه‌ها.
+مدیریت تولید صوت با سرویس Gemini TTS و هماهنگ‌سازی زمان‌بندی با Whisper.
 """
 import os
-import subprocess
-import tempfile
-import urllib.parse
-import urllib.request
+import json
+import time
+import requests
+import whisper
 from episode_tools import finalize_turns
 
+API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
+
 def tts_chunk(chunk):
-    """تولید صوت برای یک تکه از متن با استفاده از سرویس صوتی آنلاین گوگل و تبدیل با ffmpeg"""
+    """تولید صوت برای یک تکه از متن با استفاده از جمنای و مدیریت هوشمند خطای 429"""
+    headers = {"Content-Type": "application/json"}
+    speaker = chunk.get("speaker", "male")
     text = chunk.get("text", "")
-    if not text:
-        text = "سلام"
-        
-    encoded_text = urllib.parse.quote(text)
-    # استفاده از لینک مستقیم صوتی گوگل برای زبان فارسی (tl=fa)
-    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={encoded_text}&tl=fa&client=tw-ob"
     
-    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tf_mp3:
-        mp3_path = tf_mp3.name
-        
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf_wav:
-        wav_path = tf_wav.name
-        
-    try:
-        req = urllib.request.Request(
-            tts_url,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        )
-        with urllib.request.urlopen(req, timeout=30) as response:
-            mp3_data = response.read()
+    prompt = f"Speak the following Persian podcast dialogue naturally as a {speaker} podcast host:\n{text}"
+    
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "response_mime_type": "audio/wav"
+        }
+    }
+
+    last_error = None
+    for attempt in range(1, 6):
+        try:
+            resp = requests.post(f"{TTS_URL}?key={API_KEY}", json=payload, headers=headers, timeout=90)
             
-        with open(mp3_path, "wb") as f:
-            f.write(mp3_data)
-        
-        # تبدیل MP3 به WAV (16kHz, mono, PCM) با ffmpeg
-        cmd = [
-            "ffmpeg", "-y", "-i", mp3_path,
-            "-ar", "16000", "-ac", "1", "-f", "wav", wav_path
-        ]
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        
-        with open(wav_path, "rb") as f:
-            audio_bytes = f.read()
+            if resp.status_code == 429:
+                sleep_time = 12 * attempt
+                print(f"محدودیت نرخ (429 Too Many Requests) در تولید صوت. استراحت به مدت {sleep_time} ثانیه (تلاش {attempt}/5)...")
+                time.sleep(sleep_time)
+                continue
+                
+            resp.raise_for_status()
             
-        return audio_bytes
-    except Exception as e:
-        print(f"خطا در تولید صوت آنلاین: {e}")
-        # بازگرداندن یک فایل صوتی سکوت یا متن پیش‌فرض در صورت بروز خطای شبکه
-        return b""
-    finally:
-        for p in (mp3_path, wav_path):
-            if os.path.exists(p):
-                try:
-                    os.remove(p)
-                except:
-                    pass
+            data = resp.json()
+            candidate = data.get("candidates", [{}])[0]
+            content = candidate.get("content", {})
+            parts = content.get("parts", [])
+            
+            audio_bytes = None
+            for p in parts:
+                if "inlineData" in p and "data" in p["inlineData"]:
+                    import base64
+                    audio_bytes = base64.b64decode(p["inlineData"]["data"])
+                    break
+            
+            if audio_bytes:
+                return audio_bytes
+            else:
+                raise ValueError("داده‌ی صوتی در پاسخ API یافت نشد.")
+
+        except requests.RequestException as e:
+            last_error = e
+            sleep_time = 10 * attempt
+            print(f"خطا در ارتباط با سرور TTS (تلاش {attempt}/5): {e}. تکرار پس از {sleep_time} ثانیه...")
+            time.sleep(sleep_time)
+        except Exception as e:
+            last_error = e
+            print(f"خطای ناشناخته در ساخت صدا: {e}")
+            break
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("تولید صدا پس از چندین تلاش ناموفق بود.")
+
 
 def synthesize_dialogue(turns, audio_path):
-    """ترکیب و ساخت کل فایل صوتی پادکست از روی دیالوگ‌ها"""
+    """ترکیب و ساخت کل فایل صوتی پادکست از روی دیالوگ‌ها با جمنای"""
     os.makedirs(os.path.dirname(audio_path), exist_ok=True)
     
     all_pcm_chunks = []
@@ -68,12 +81,15 @@ def synthesize_dialogue(turns, audio_path):
     
     for idx, turn in enumerate(turns):
         print(f"ساخت صدا برای تکه {idx + 1} از {total_turns}...")
-        pcm = tts_chunk(turn)
-        if pcm:
-            all_pcm_chunks.append(pcm)
-
-    if not all_pcm_chunks:
-        raise RuntimeError("هیچ داده‌ی صوتی تولید نشد.")
+        try:
+            pcm = tts_chunk(turn)
+            if pcm:
+                all_pcm_chunks.append(pcm)
+        except Exception as e:
+            print(f"خطا در ساخت صدای بخش {idx + 1}: {e}")
+            raise e
+        
+        time.sleep(2)
 
     combined_audio = b"".join(all_pcm_chunks)
     with open(audio_path, "wb") as f:
@@ -84,22 +100,19 @@ def synthesize_dialogue(turns, audio_path):
     estimated_seconds = file_size / (16000 * 2) if file_size > 0 else 200.0
     return max(10.0, estimated_seconds)
 
+
 def build_scene_timeline(summary, turns, audio_path):
-    """هماهنگ‌سازی زمان‌بندی صحنه‌ها با استفاده از Whisper (در صورت موجود بودن) یا زمان‌بندی استاندارد"""
+    """تشخیص گفتار با Whisper و هماهنگ‌سازی زمان‌بندی صحنه‌ها با دیالوگ‌ها"""
     turns = finalize_turns(turns, summary)
     
-    segments = []
-    try:
-        import whisper
-        print("بارگذاری مدل تشخیص گفتار (medium)...")
-        model = whisper.load_model("medium")
-        print(f"در حال پردازش صوت {audio_path}...")
-        result = model.transcribe(audio_path, language="fa")
-        segments = result.get("segments", [])
-        total_words = sum(len(seg.get("text", "").split()) for seg in segments)
-        print(f"{total_words} کلمه از روی صدا تشخیص داده شد")
-    except Exception as e:
-        print(f"توجه: امکان استفاده از Whisper فراهم نیست ({e}). استفاده از محاسبه‌گر زمان‌بندی استاندارد.")
+    print("بارگذاری مدل تشخیص گفتار (medium)...")
+    model = whisper.load_model("medium")
+    print(f"در حال پردازش صوت {audio_path}...")
+    result = model.transcribe(audio_path, language="fa")
+    
+    segments = result.get("segments", [])
+    total_words = sum(len(seg.get("text", "").split()) for seg in segments)
+    print(f"{total_words} کلمه از روی صدا تشخیص داده شد")
     
     timeline = []
     n_turns = len(turns)
@@ -118,5 +131,5 @@ def build_scene_timeline(summary, turns, audio_path):
         })
         cur = end
 
-    print(f"{n_turns} جمله → {len(timeline)} صحنه هماهنگ شد")
+    print(f"{n_turns} جمله → {len(timeline)} صحنه هماهنگ با صدا")
     return timeline
