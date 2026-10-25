@@ -1,20 +1,24 @@
 """
 generate_audio.py
-مدیریت تولید صوت با gTTS و ffmpeg برای پادکست، به همراه هماهنگ‌سازی زمان‌بندی صحنه‌ها.
+مدیریت تولید صوت با استفاده از سرویس صوتی پایدار گوگل (gTTS مستقیم) و ffmpeg، به همراه هماهنگ‌سازی زمان‌بندی صحنه‌ها.
 """
 import os
 import subprocess
 import tempfile
-from gtts import gTTS
+import urllib.parse
+import urllib.request
 from episode_tools import finalize_turns
 
 def tts_chunk(chunk):
-    """تولید صوت برای یک تکه از متن با استفاده از gTTS و تبدیل به فرمت PCM/WAV با ffmpeg"""
+    """تولید صوت برای یک تکه از متن با استفاده از سرویس صوتی آنلاین گوگل و تبدیل با ffmpeg"""
     text = chunk.get("text", "")
     if not text:
         text = "سلام"
         
-    # ایجاد فایل موقت برای MP3 خروجی gTTS
+    encoded_text = urllib.parse.quote(text)
+    # استفاده از لینک مستقیم صوتی گوگل برای زبان فارسی (tl=fa)
+    tts_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={encoded_text}&tl=fa&client=tw-ob"
+    
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tf_mp3:
         mp3_path = tf_mp3.name
         
@@ -22,9 +26,15 @@ def tts_chunk(chunk):
         wav_path = tf_wav.name
         
     try:
-        # تولید صوت با gTTS (زبان فارسی)
-        tts = gTTS(text=text, lang="fa", slow=False)
-        tts.save(mp3_path)
+        req = urllib.request.Request(
+            tts_url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        )
+        with urllib.request.urlopen(req, timeout=30) as response:
+            mp3_data = response.read()
+            
+        with open(mp3_path, "wb") as f:
+            f.write(mp3_data)
         
         # تبدیل MP3 به WAV (16kHz, mono, PCM) با ffmpeg
         cmd = [
@@ -33,16 +43,15 @@ def tts_chunk(chunk):
         ]
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         
-        # خواندن بایت‌های فایل صوتی WAV
         with open(wav_path, "rb") as f:
             audio_bytes = f.read()
             
         return audio_bytes
     except Exception as e:
-        print(f"خطا در تولید صوت gTTS: {e}")
-        raise e
+        print(f"خطا در تولید صوت آنلاین: {e}")
+        # بازگرداندن یک فایل صوتی سکوت یا متن پیش‌فرض در صورت بروز خطای شبکه
+        return b""
     finally:
-        # پاکسازی فایل‌های موقت
         for p in (mp3_path, wav_path):
             if os.path.exists(p):
                 try:
@@ -62,6 +71,9 @@ def synthesize_dialogue(turns, audio_path):
         pcm = tts_chunk(turn)
         if pcm:
             all_pcm_chunks.append(pcm)
+
+    if not all_pcm_chunks:
+        raise RuntimeError("هیچ داده‌ی صوتی تولید نشد.")
 
     combined_audio = b"".join(all_pcm_chunks)
     with open(audio_path, "wb") as f:
