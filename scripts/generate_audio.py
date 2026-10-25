@@ -1,6 +1,6 @@
 """
 generate_audio.py
-مدیریت تولید صوت با ساختار اصلی، تنظیمات صوتی، دسته‌بندی هوشمند جملات، استفاده از wave.open و هماهنگ‌سازی با Whisper.
+مدیریت تولید صوت با ساختار درست API، دسته‌بندی هوشمند جملات، استفاده از wave.open و هماهنگ‌سازی با Whisper.
 """
 import os
 import json
@@ -14,11 +14,12 @@ API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
 
 def tts_chunk(chunk):
-    """تولید صوت برای یک تکه از متن با تنظیمات کامل صوتی و مدیریت خطا"""
+    """تولید صوت برای یک تکه از متن با ساختار استاندارد و معتبر درخواست صوتی"""
     headers = {"Content-Type": "application/json"}
     speaker = chunk.get("speaker", "male")
     text = chunk.get("text", "")
     
+    # ساختار استاندارد و صحیح payload صوتی برای جلوگیری از خطای 400
     payload = {
         "contents": [{
             "parts": [{"text": f"به عنوان گوینده‌ی پادکست فوتبال، این متن را به صورت طبیعی و با لحن زنده بخوان:\n{text}"}]
@@ -121,7 +122,6 @@ def synthesize_dialogue(turns, audio_path):
     """ترکیب و ساخت کل فایل صوتی پادکست با استفاده از wave.open و دسته‌بندی جملات"""
     os.makedirs(os.path.dirname(audio_path), exist_ok=True)
     
-    # دسته‌بندی جملات برای کاهش تعداد درخواست‌ها
     processed_turns = batch_turns(turns, max_sentences_per_chunk=2)
     
     all_frames = []
@@ -149,7 +149,6 @@ def synthesize_dialogue(turns, audio_path):
         
         time.sleep(2)
 
-    # ذخیره‌سازی نهایی با استفاده از wave.open برای ساخت هدر کامل و معتبر WAV
     with wave.open(audio_path, 'wb') as wf:
         wf.setnchannels(channels if channels else 1)
         wf.setsampwidth(sampwidth if sampwidth else 2)
