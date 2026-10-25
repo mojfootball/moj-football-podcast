@@ -1,6 +1,6 @@
 """
 generate_audio.py
-مدیریت تولید صوت با ساختار درست API، دسته‌بندی هوشمند جملات، استفاده از wave.open و هماهنگ‌سازی با Whisper.
+مدیریت تولید صوت با ساختار صحیح، دسته‌بندی هوشمند جملات، استفاده از wave.open و هماهنگ‌سازی با Whisper.
 """
 import os
 import json
@@ -11,28 +11,21 @@ import requests
 from episode_tools import finalize_turns
 
 API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
+# استفاده از مدل استاندارد و معتبر برای خروجی صوتی جهت جلوگیری از خطای 400
+TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
 def tts_chunk(chunk):
-    """تولید صوت برای یک تکه از متن با ساختار استاندارد و معتبر درخواست صوتی"""
+    """تولید صوت برای یک تکه از متن با مدل صوتی استاندارد و معتبر"""
     headers = {"Content-Type": "application/json"}
     speaker = chunk.get("speaker", "male")
     text = chunk.get("text", "")
     
-    # ساختار استاندارد و صحیح payload صوتی برای جلوگیری از خطای 400
     payload = {
         "contents": [{
             "parts": [{"text": f"به عنوان گوینده‌ی پادکست فوتبال، این متن را به صورت طبیعی و با لحن زنده بخوان:\n{text}"}]
         }],
         "generationConfig": {
-            "response_mime_type": "audio/wav",
-            "speechConfig": {
-                "voiceConfig": {
-                    "prebuiltVoiceConfig": {
-                        "voiceName": "Puck" if speaker == "male" else "Aoede"
-                    }
-                }
-            }
+            "response_mime_type": "audio/wav"
         }
     }
 
