@@ -1,75 +1,54 @@
 """
 generate_audio.py
-مدیریت تولید صوت، اتصال به سرویس TTS و هماهنگ‌سازی زمان‌بندی صحنه‌ها.
+مدیریت تولید صوت با gTTS و ffmpeg برای پادکست، به همراه هماهنگ‌سازی زمان‌بندی صحنه‌ها.
 """
 import os
-import json
-import time
-import requests
+import subprocess
+import tempfile
+from gtts import gTTS
 from episode_tools import finalize_turns
 
-API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
-
 def tts_chunk(chunk):
-    """تولید صوت برای یک تکه از متن با مدیریت هوشمند خطای 429 و تلاش مجدد"""
-    headers = {"Content-Type": "application/json"}
-    speaker = chunk.get("speaker", "male")
+    """تولید صوت برای یک تکه از متن با استفاده از gTTS و تبدیل به فرمت PCM/WAV با ffmpeg"""
     text = chunk.get("text", "")
-    
-    prompt = f"Speak the following Persian podcast dialogue naturally as a {speaker} podcast host:\n{text}"
-    
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "response_mime_type": "audio/wav"
-        }
-    }
-
-    last_error = None
-    for attempt in range(1, 6):
-        try:
-            resp = requests.post(f"{TTS_URL}?key={API_KEY}", json=payload, headers=headers, timeout=90)
+    if not text:
+        text = "سلام"
+        
+    # ایجاد فایل موقت برای MP3 خروجی gTTS
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tf_mp3:
+        mp3_path = tf_mp3.name
+        
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf_wav:
+        wav_path = tf_wav.name
+        
+    try:
+        # تولید صوت با gTTS (زبان فارسی)
+        tts = gTTS(text=text, lang="fa", slow=False)
+        tts.save(mp3_path)
+        
+        # تبدیل MP3 به WAV (16kHz, mono, PCM) با ffmpeg
+        cmd = [
+            "ffmpeg", "-y", "-i", mp3_path,
+            "-ar", "16000", "-ac", "1", "-f", "wav", wav_path
+        ]
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        
+        # خواندن بایت‌های فایل صوتی WAV
+        with open(wav_path, "rb") as f:
+            audio_bytes = f.read()
             
-            if resp.status_code == 429:
-                sleep_time = 12 * attempt
-                print(f"محدودیت نرخ (429 Too Many Requests) در تولید صوت. استراحت به مدت {sleep_time} ثانیه (تلاش {attempt}/5)...")
-                time.sleep(sleep_time)
-                continue
-                
-            resp.raise_for_status()
-            
-            data = resp.json()
-            candidate = data.get("candidates", [{}])[0]
-            content = candidate.get("content", {})
-            parts = content.get("parts", [])
-            
-            audio_bytes = None
-            for p in parts:
-                if "inlineData" in p and "data" in p["inlineData"]:
-                    import base64
-                    audio_bytes = base64.b64decode(p["inlineData"]["data"])
-                    break
-            
-            if audio_bytes:
-                return audio_bytes
-            else:
-                raise ValueError("داده‌ی صوتی در پاسخ API یافت نشد.")
-
-        except requests.RequestException as e:
-            last_error = e
-            sleep_time = 10 * attempt
-            print(f"خطا در ارتباط با سرور TTS (تلاش {attempt}/5): {e}. تکرار پس از {sleep_time} ثانیه...")
-            time.sleep(sleep_time)
-        except Exception as e:
-            last_error = e
-            print(f"خطای ناشناخته در ساخت صدا: {e}")
-            break
-
-    if last_error:
-        raise last_error
-    raise RuntimeError("تولید صدا پس از چندین تلاش ناموفق بود.")
-
+        return audio_bytes
+    except Exception as e:
+        print(f"خطا در تولید صوت gTTS: {e}")
+        raise e
+    finally:
+        # پاکسازی فایل‌های موقت
+        for p in (mp3_path, wav_path):
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except:
+                    pass
 
 def synthesize_dialogue(turns, audio_path):
     """ترکیب و ساخت کل فایل صوتی پادکست از روی دیالوگ‌ها"""
@@ -80,15 +59,9 @@ def synthesize_dialogue(turns, audio_path):
     
     for idx, turn in enumerate(turns):
         print(f"ساخت صدا برای تکه {idx + 1} از {total_turns}...")
-        try:
-            pcm = tts_chunk(turn)
-            if pcm:
-                all_pcm_chunks.append(pcm)
-        except Exception as e:
-            print(f"خطا در ساخت صدای بخش {idx + 1}: {e}")
-            raise e
-        
-        time.sleep(2)
+        pcm = tts_chunk(turn)
+        if pcm:
+            all_pcm_chunks.append(pcm)
 
     combined_audio = b"".join(all_pcm_chunks)
     with open(audio_path, "wb") as f:
@@ -98,7 +71,6 @@ def synthesize_dialogue(turns, audio_path):
     file_size = len(combined_audio)
     estimated_seconds = file_size / (16000 * 2) if file_size > 0 else 200.0
     return max(10.0, estimated_seconds)
-
 
 def build_scene_timeline(summary, turns, audio_path):
     """هماهنگ‌سازی زمان‌بندی صحنه‌ها با استفاده از Whisper (در صورت موجود بودن) یا زمان‌بندی استاندارد"""
