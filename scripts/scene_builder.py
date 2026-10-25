@@ -1,9 +1,9 @@
 """
 scene_builder.py
 
-هر صحنه‌ی ویدیو دقیقاً از روی زمان‌بندی صدا ساخته می‌شه (نه تایمر ثابت).
+هر صحنه‌ی ویدیو دقیقاً از روی زمان‌بندی صدا ساخته می‌شه.
 شناسه‌ی صحنه:
-    title | outro | momentum | compare | shots | prediction | table
+    title | outro | momentum | compare | shots | prediction | table | cards
     goal:N | card:N | stat:Key | player:N | news:N
 """
 
@@ -23,6 +23,7 @@ class SceneBuilder:
         events = summary.get("events") or []
         self.goal_events = [e for e in events if e.get("type") == "Goal"]
         self.card_sub_events = [e for e in events if e.get("type") in ("Red Card", "Substitution")]
+        self.all_cards = [e for e in events if "card" in str(e.get("type", "")).lower()]
         self.all_players = (
             [(p, summary["home_team"]) for p in summary.get("home_top_players") or []]
             + [(p, summary["away_team"]) for p in summary.get("away_top_players") or []]
@@ -89,6 +90,11 @@ class SceneBuilder:
             if not tc or not tc.get("top8"):
                 raise ValueError("جدول لیگ برای این بازی در دسترس نیست")
             return {"type": "table", **teams, "table_context": tc}
+
+        if kind == "cards":
+            if not self.all_cards:
+                raise ValueError("کارتی در داده‌ها نیست")
+            return {"type": "cards", "events": self.all_cards, **teams}
 
         if kind == "goal":
             event = self._get(self.goal_events, ref, sid)
