@@ -1,7 +1,10 @@
 """
 scene_builder.py
 
-مدیریت و تفکیک صحنه‌های ویدیو از روی زمان‌بندی صوتی.
+هر صحنه‌ی ویدیو دقیقاً از روی زمان‌بندی صدا ساخته می‌شه (نه تایمر ثابت).
+شناسه‌ی صحنه:
+    title | outro | momentum | compare | shots | prediction | table
+    goal:N | card:N | stat:Key | player:N | news:N
 """
 
 STAT_BY_KEY = {
@@ -35,6 +38,25 @@ class SceneBuilder:
             raise ValueError(f"شناسه‌ی صحنه خارج از محدوده: {sid}")
         return items[i]
 
+    def _target_for(self, event):
+        if not event:
+            return None
+        shots = (self.summary.get("home_key_shots") or []) + (self.summary.get("away_key_shots") or [])
+        for sh in shots:
+            if sh.get("outcome") == "Goal" and sh.get("playerName") == event.get("player"):
+                return sh.get("goalTarget")
+        return None
+
+    def _player_by_name(self, name):
+        if not name:
+            return None, None
+        name_l = str(name).lower()
+        for p, team in self.all_players:
+            pn = str(p.get("name") or "").lower()
+            if pn and (pn == name_l or pn in name_l or name_l in pn):
+                return p, team
+        return None, None
+
     def _compare(self):
         s = self.summary
         return {"type": "compare", "home_team": s["home_team"], "away_team": s["away_team"],
@@ -64,47 +86,29 @@ class SceneBuilder:
 
         if kind == "table":
             tc = s.get("table_context")
-            # اگر جدول از API نیامده بود (مثل لیگ قهرمانان)، جدول استاندارد پویا با تیم‌های حاضر ساخته می‌شود
             if not tc or not tc.get("top8"):
-                home_t = s.get("home_team") or "میزبان"
-                away_t = s.get("away_team") or "میهمان"
-                tc = {
-                    "top8": [
-                        {"rank": 1, "team_id": 1, "name": "Real Madrid", "fa_name": "رئال مادرید", "logo": "", "played": 8, "won": 6, "drawn": 1, "lost": 1, "gf": 18, "ga": 7, "gd": 11, "points": 19},
-                        {"rank": 2, "team_id": 2, "name": "Bayern Munich", "fa_name": "بایرن مونیخ", "logo": "", "played": 8, "won": 5, "drawn": 2, "lost": 1, "gf": 16, "ga": 8, "gd": 8, "points": 17},
-                        {"rank": 3, "team_id": 3, "name": "Manchester City", "fa_name": "منچسترسیتی", "logo": "", "played": 8, "won": 5, "drawn": 1, "lost": 2, "gf": 17, "ga": 10, "gd": 7, "points": 16},
-                        {"rank": 4, "team_id": 4, "name": "Barcelona", "fa_name": "بارسلونا", "logo": "", "played": 8, "won": 4, "drawn": 3, "lost": 1, "gf": 15, "ga": 9, "gd": 6, "points": 15},
-                        {"rank": 5, "team_id": 5, "name": "Liverpool", "fa_name": "لیورپول", "logo": "", "played": 8, "won": 4, "drawn": 2, "lost": 2, "gf": 14, "ga": 10, "gd": 4, "points": 14},
-                        {"rank": 6, "team_id": 6, "name": "Inter Milan", "fa_name": "اینتر", "logo": "", "played": 8, "won": 3, "drawn": 4, "lost": 1, "gf": 11, "ga": 7, "gd": 4, "points": 13},
-                        {"rank": 7, "team_id": 7, "name": home_t, "fa_name": home_t, "logo": s.get("home_logo"), "played": 8, "won": 3, "drawn": 3, "lost": 2, "gf": 12, "ga": 10, "gd": 2, "points": 12},
-                        {"rank": 8, "team_id": 8, "name": away_t, "fa_name": away_t, "logo": s.get("away_logo"), "played": 8, "won": 3, "drawn": 2, "lost": 3, "gf": 11, "ga": 9, "gd": 2, "points": 11},
-                    ],
-                    "home_extra": None,
-                    "away_extra": None,
-                    "home_id": 7,
-                    "away_id": 8
-                }
+                raise ValueError("جدول لیگ برای این بازی در دسترس نیست")
             return {"type": "table", **teams, "table_context": tc}
 
         if kind == "goal":
             event = self._get(self.goal_events, ref, sid)
-            v = variant % 2
+            goal_index = int(ref) if str(ref).isdigit() else 0
+            v = variant % 3
             if v == 0:
-                return {"type": "goal_pitch", "event": event, **teams, "goal_index": int(ref if ref.isdigit() else 0)}
+                return {"type": "goal_pitch", "event": event, "goal_index": goal_index, **teams}
+            if v == 1:
+                return {"type": "goal", "event": event, "target": self._target_for(event)}
             p, team = self._player_by_name(event.get("player"))
             if p:
                 return {"type": "player_card", "player": p, "team": team}
-            return {"type": "goal_pitch", "event": event, **teams, "goal_index": int(ref if ref.isdigit() else 0)}
+            return {"type": "goal", "event": event, "target": self._target_for(event)}
 
         if kind == "card":
             return {"type": "card_or_sub", "event": self._get(self.card_sub_events, ref, sid)}
 
         if kind == "stat":
-            v = variant % 2
-            if v == 1:
-                return self._compare()
             if ref not in STAT_BY_KEY:
-                return self._compare()
+                raise ValueError(f"آمار ناشناخته: {sid}")
             label, fmt = STAT_BY_KEY[ref]
             return {"type": "stat_bar", "label": label, "format": fmt,
                     "home_value": (s.get("home_stats") or {}).get(ref),
@@ -115,8 +119,7 @@ class SceneBuilder:
             return {"type": "player_card", "player": p, "team": team}
 
         if kind == "news":
-            headline_item = self._get(self.news, ref, sid) if self.news else {"title": "حاشیه‌ها و اخبار پیرامون مسابقه"}
-            return {"type": "news", "headline": headline_item}
+            return {"type": "news", "headline": self._get(self.news, ref, sid)}
 
         raise ValueError(f"شناسه‌ی صحنه ناشناخته: {sid}")
 
@@ -133,7 +136,7 @@ def build_scenes(summary, segments):
         visits[sid] = v + 1
         kind = sid.partition(":")[0]
         if kind == "goal" and dur >= 10:
-            n = min(2, int(dur // 5))
+            n = min(3, int(dur // 4))
             plen = dur / n
             for i in range(n):
                 scenes.append({"start": start + i * plen, "end": start + (i + 1) * plen,
