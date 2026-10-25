@@ -27,7 +27,7 @@ def scene_table(s, summary, B):
     B.header(d, "جدول رده‌بندی", y=118)
 
     tc = s.get("table_context") or {}
-    rows = list(tc.get("top8") or [])
+    rows = list(tc.get("top12") or [])
     extras = list(tc.get("extras") or [])
     if not rows:
         raise ValueError("جدول لیگ خالیه")
