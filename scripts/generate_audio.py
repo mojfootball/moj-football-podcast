@@ -1,12 +1,4 @@
-"""
-generate_audio.py
-
-- ساخت صدای دو نفره با Gemini TTS (چند نوبت در هر درخواست، برای صرفه‌جویی در سهمیه‌ی ۱۵ تا در روز)
-- ذخیره‌ی فایل WAV معتبر
-- زمان‌بندی واقعی تصاویر در sync_tools از روی خود صدا محاسبه می‌شه
-"""
 import os
-import re
 import json
 import time
 import base64
@@ -24,8 +16,7 @@ MALE_NAME = "مجتبا"
 FEMALE_NAME = "ماهور"
 MALE_VOICE = "Algenib"
 FEMALE_VOICE = "Kore"
-DEFAULT_RATE = 24000
-CHUNK_SIZE = 8
+SAMPLE_RATE = 24000
 
 STYLE_INSTRUCTION = (
     "این یه پادکست فوتبالی ویدیویی با دو مجری ورزشی حرفه‌ای و پرانرژیه که زنده روی آنتن صحبت می‌کنن. "
@@ -37,21 +28,18 @@ STYLE_INSTRUCTION = (
 )
 
 
-def _name(turn):
-    return MALE_NAME if turn.get("speaker") == "male" else FEMALE_NAME
-
-
 def turns_to_text_block(turns):
     lines = [STYLE_INSTRUCTION, ""]
     for t in turns:
-        lines.append(_name(t) + ": " + t["text"])
+        name = MALE_NAME if t["speaker"] == "male" else FEMALE_NAME
+        lines.append(name + ": " + t["text"])
     return "\n".join(lines)
 
 
 def tts_chunk(turns_chunk):
-    """یک تکه (چند نوبت) رو به صدا تبدیل می‌کنه. خروجی: (pcm_bytes, sample_rate)"""
+    text_block = turns_to_text_block(turns_chunk)
     payload = {
-        "contents": [{"parts": [{"text": turns_to_text_block(turns_chunk)}]}],
+        "contents": [{"parts": [{"text": text_block}]}],
         "generationConfig": {
             "responseModalities": ["AUDIO"],
             "speechConfig": {
@@ -74,66 +62,52 @@ def tts_chunk(turns_chunk):
     last_error = None
     for attempt in range(3):
         if attempt > 0:
-            wait = 30 * attempt
-            print(f"صبر {wait} ثانیه قبل از تلاش بعدی...")
-            time.sleep(wait)
+            time.sleep(30 * attempt)
         try:
             resp = requests.post(f"{TTS_URL}?key={GEMINI_API_KEY}", json=payload, timeout=180)
             resp.raise_for_status()
             data = resp.json()
             part = data["candidates"][0]["content"]["parts"][0]
             inline = part.get("inlineData") or part.get("inline_data")
-            pcm = base64.b64decode(inline["data"])
-            if not pcm:
-                raise ValueError("داده‌ی صوتی خالی بود")
-            mime = inline.get("mimeType") or inline.get("mime_type") or ""
-            m = re.search(r"rate=(\d+)", mime)
-            rate = int(m.group(1)) if m else DEFAULT_RATE
-            return pcm, rate
-        except (requests.RequestException, KeyError, IndexError, TypeError, ValueError) as e:
+            return base64.b64decode(inline["data"])
+        except requests.RequestException as e:
             last_error = e
             print(f"تلاش {attempt + 1} برای یه تکه از صدا ناموفق بود: {e}")
-    raise RuntimeError(f"ساخت صدا ناموفق بود (احتمالاً سهمیه‌ی روزانه‌ی TTS تموم شده): {last_error}")
+    raise last_error
 
 
-def chunk_turns(turns, size=CHUNK_SIZE):
+def chunk_turns(turns, size=8):
     for i in range(0, len(turns), size):
         yield turns[i:i + size]
 
 
 def synthesize_dialogue(turns, output_path):
-    """کل گفتگو رو به یک فایل WAV تبدیل می‌کنه و طول صدا (ثانیه) رو برمی‌گردونه."""
-    folder = os.path.dirname(output_path)
-    if folder:
-        os.makedirs(folder, exist_ok=True)
-
     all_pcm = bytearray()
-    rate = DEFAULT_RATE
-    chunks = list(chunk_turns(turns))
+    chunks = list(chunk_turns(turns, size=8))
     for i, chunk in enumerate(chunks):
         if i > 0:
             time.sleep(20)
         print(f"ساخت صدا برای تکه {i + 1} از {len(chunks)}...")
-        pcm, rate = tts_chunk(chunk)
+        pcm = tts_chunk(chunk)
         all_pcm.extend(pcm)
 
     with wave.open(output_path, "wb") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
-        wf.setframerate(rate)
+        wf.setframerate(SAMPLE_RATE)
         wf.writeframes(bytes(all_pcm))
 
-    total_seconds = len(all_pcm) / 2 / rate
+    total_seconds = len(all_pcm) / 2 / SAMPLE_RATE
     print(f"فایل صوتی ساخته شد: {output_path} (طول: {total_seconds:.1f} ثانیه)")
     return total_seconds
 
 
 def build_scene_timeline(turns, total_seconds):
     """
-    فقط متن و گوینده‌ی هر نوبت رو نگه می‌داره (با یه تخمین اولیه‌ی زمان).
+    فقط متن هر نوبت صحبت رو نگه می‌داره (با یه تخمین اولیه‌ی زمان).
     زمان‌بندی واقعی تصاویر در sync_tools از روی خود فایل صوتی محاسبه می‌شه.
     """
-    word_counts = [max(1, len(t.get("text", "").split())) for t in turns]
+    word_counts = [max(1, len(t["text"].split())) for t in turns]
     total_words = sum(word_counts)
     timeline = []
     elapsed = 0.0
@@ -144,7 +118,7 @@ def build_scene_timeline(turns, total_seconds):
             "start": elapsed,
             "end": elapsed + duration,
             "speaker": t.get("speaker"),
-            "text": t.get("text", ""),
+            "text": t["text"],
         })
         elapsed += duration
     if timeline:
@@ -168,4 +142,5 @@ if __name__ == "__main__":
     timeline = build_scene_timeline(turns, total_seconds)
     with open("timing.json", "w", encoding="utf-8") as f:
         json.dump(timeline, f, ensure_ascii=False, indent=2)
+
     print(f"\n{len(timeline)} نوبت صحبت ذخیره شد.")
