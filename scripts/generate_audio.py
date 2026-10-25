@@ -1,29 +1,37 @@
 """
 generate_audio.py
-مدیریت تولید صوت با سرویس اصلی Gemini TTS و هماهنگ‌سازی زمان‌بندی با Whisper.
+مدیریت تولید صوت با ساختار اصلی، تنظیمات صوتی، دسته‌بندی هوشمند جملات، استفاده از wave.open و هماهنگ‌سازی با Whisper.
 """
 import os
 import json
 import time
+import wave
+import io
 import requests
 from episode_tools import finalize_turns
 
 API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-# بازگشت به مدل اصلی و تخصصی صوتی جمنای
 TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
 
 def tts_chunk(chunk):
-    """تولید صوت برای یک تکه از متن با مدل اصلی جمنای و مدیریت هوشمند خطای 429"""
+    """تولید صوت برای یک تکه از متن با تنظیمات کامل صوتی و مدیریت خطا"""
     headers = {"Content-Type": "application/json"}
     speaker = chunk.get("speaker", "male")
     text = chunk.get("text", "")
     
-    prompt = f"Speak the following Persian podcast dialogue naturally as a {speaker} podcast host:\n{text}"
-    
     payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
+        "contents": [{
+            "parts": [{"text": f"به عنوان گوینده‌ی پادکست فوتبال، این متن را به صورت طبیعی و با لحن زنده بخوان:\n{text}"}]
+        }],
         "generationConfig": {
-            "response_mime_type": "audio/wav"
+            "response_mime_type": "audio/wav",
+            "speechConfig": {
+                "voiceConfig": {
+                    "prebuiltVoiceConfig": {
+                        "voiceName": "Puck" if speaker == "male" else "Aoede"
+                    }
+                }
+            }
         }
     }
 
@@ -33,7 +41,7 @@ def tts_chunk(chunk):
             resp = requests.post(f"{TTS_URL}?key={API_KEY}", json=payload, headers=headers, timeout=90)
             
             if resp.status_code == 429:
-                sleep_time = 15 * attempt
+                sleep_time = 12 * attempt
                 print(f"محدودیت نرخ (429 Too Many Requests) در تولید صوت. استراحت به مدت {sleep_time} ثانیه (تلاش {attempt}/5)...")
                 time.sleep(sleep_time)
                 continue
@@ -72,34 +80,88 @@ def tts_chunk(chunk):
     raise RuntimeError("تولید صدا پس از چندین تلاش ناموفق بود.")
 
 
+def batch_turns(turns, max_sentences_per_chunk=2):
+    """دسته‌بندی هوشمند جملات پشت سر هم برای کاهش تعداد درخواست‌های API به TTS"""
+    batched = []
+    current_speaker = None
+    current_texts = []
+    current_scene = None
+    
+    for turn in turns:
+        spk = turn.get("speaker", "male")
+        txt = turn.get("text", "")
+        scene = turn.get("scene", "compare")
+        
+        if current_speaker is None:
+            current_speaker = spk
+            current_scene = scene
+            current_texts = [txt]
+        elif current_speaker == spk and len(current_texts) < max_sentences_per_chunk:
+            current_texts.append(txt)
+        else:
+            batched.append({
+                "speaker": current_speaker,
+                "text": " ".join(current_texts),
+                "scene": current_scene
+            })
+            current_speaker = spk
+            current_scene = scene
+            current_texts = [txt]
+            
+    if current_texts:
+        batched.append({
+            "speaker": current_speaker,
+            "text": " ".join(current_texts),
+            "scene": current_scene
+        })
+    return batched
+
+
 def synthesize_dialogue(turns, audio_path):
-    """ترکیب و ساخت کل فایل صوتی پادکست از روی دیالوگ‌ها با مدل صوتی اصلی"""
+    """ترکیب و ساخت کل فایل صوتی پادکست با استفاده از wave.open و دسته‌بندی جملات"""
     os.makedirs(os.path.dirname(audio_path), exist_ok=True)
     
-    all_pcm_chunks = []
-    total_turns = len(turns)
+    # دسته‌بندی جملات برای کاهش تعداد درخواست‌ها
+    processed_turns = batch_turns(turns, max_sentences_per_chunk=2)
     
-    for idx, turn in enumerate(turns):
-        print(f"ساخت صدا برای تکه {idx + 1} از {total_turns}...")
+    all_frames = []
+    sample_rate = 16000
+    channels = 1
+    sampwidth = 2
+    
+    total_chunks = len(processed_turns)
+    for idx, chunk in enumerate(processed_turns):
+        print(f"ساخت صدا برای تکه {idx + 1} از {total_chunks}...")
         try:
-            pcm = tts_chunk(turn)
-            if pcm:
-                all_pcm_chunks.append(pcm)
+            pcm_data = tts_chunk(chunk)
+            if pcm_data:
+                try:
+                    with wave.open(io.BytesIO(pcm_data), 'rb') as wf:
+                        sample_rate = wf.getframerate()
+                        channels = wf.getnchannels()
+                        sampwidth = wf.getsampwidth()
+                        all_frames.append(wf.readframes(wf.getnframes()))
+                except Exception:
+                    all_frames.append(pcm_data)
         except Exception as e:
             print(f"خطا در ساخت صدای بخش {idx + 1}: {e}")
             raise e
         
-        # وقفه ایمن بین درخواست‌ها برای جلوگیری از بروز خطای 429
-        time.sleep(3)
+        time.sleep(2)
 
-    combined_audio = b"".join(all_pcm_chunks)
-    with open(audio_path, "wb") as f:
-        f.write(combined_audio)
+    # ذخیره‌سازی نهایی با استفاده از wave.open برای ساخت هدر کامل و معتبر WAV
+    with wave.open(audio_path, 'wb') as wf:
+        wf.setnchannels(channels if channels else 1)
+        wf.setsampwidth(sampwidth if sampwidth else 2)
+        wf.setframerate(sample_rate if sample_rate else 16000)
+        for frames in all_frames:
+            wf.writeframes(frames)
 
-    print(f"فایل صوتی ساخته شد: {audio_path}")
-    file_size = len(combined_audio)
-    estimated_seconds = file_size / (16000 * 2) if file_size > 0 else 200.0
-    return max(10.0, estimated_seconds)
+    print(f"فایل صوتی با هدر استاندارد ساخته شد: {audio_path}")
+    
+    total_frames_count = sum(len(f) for f in all_frames) / (channels * sampwidth if channels and sampwidth else 2)
+    duration_seconds = total_frames_count / (sample_rate if sample_rate else 16000)
+    return max(10.0, duration_seconds)
 
 
 def build_scene_timeline(summary, turns, audio_path):
