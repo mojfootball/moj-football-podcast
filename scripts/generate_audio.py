@@ -1,6 +1,6 @@
 """
 generate_audio.py
-مدیریت تولید صوت با سرویس Gemini TTS و هماهنگ‌سازی زمان‌بندی با Whisper.
+مدیریت تولید صوت با سرویس اصلی Gemini TTS و هماهنگ‌سازی زمان‌بندی با Whisper.
 """
 import os
 import json
@@ -9,10 +9,11 @@ import requests
 from episode_tools import finalize_turns
 
 API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+# بازگشت به مدل اصلی و تخصصی صوتی جمنای
+TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
 
 def tts_chunk(chunk):
-    """تولید صوت برای یک تکه از متن با استفاده از جمنای و مدیریت هوشمند خطای 429"""
+    """تولید صوت برای یک تکه از متن با مدل اصلی جمنای و مدیریت هوشمند خطای 429"""
     headers = {"Content-Type": "application/json"}
     speaker = chunk.get("speaker", "male")
     text = chunk.get("text", "")
@@ -32,7 +33,7 @@ def tts_chunk(chunk):
             resp = requests.post(f"{TTS_URL}?key={API_KEY}", json=payload, headers=headers, timeout=90)
             
             if resp.status_code == 429:
-                sleep_time = 12 * attempt
+                sleep_time = 15 * attempt
                 print(f"محدودیت نرخ (429 Too Many Requests) در تولید صوت. استراحت به مدت {sleep_time} ثانیه (تلاش {attempt}/5)...")
                 time.sleep(sleep_time)
                 continue
@@ -72,7 +73,7 @@ def tts_chunk(chunk):
 
 
 def synthesize_dialogue(turns, audio_path):
-    """ترکیب و ساخت کل فایل صوتی پادکست از روی دیالوگ‌ها با جمنای"""
+    """ترکیب و ساخت کل فایل صوتی پادکست از روی دیالوگ‌ها با مدل صوتی اصلی"""
     os.makedirs(os.path.dirname(audio_path), exist_ok=True)
     
     all_pcm_chunks = []
@@ -88,7 +89,8 @@ def synthesize_dialogue(turns, audio_path):
             print(f"خطا در ساخت صدای بخش {idx + 1}: {e}")
             raise e
         
-        time.sleep(2)
+        # وقفه ایمن بین درخواست‌ها برای جلوگیری از بروز خطای 429
+        time.sleep(3)
 
     combined_audio = b"".join(all_pcm_chunks)
     with open(audio_path, "wb") as f:
