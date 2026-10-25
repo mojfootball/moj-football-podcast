@@ -1,12 +1,11 @@
 """
 generate_audio.py
-مدیریت تولید صوت با سرویس Gemini TTS و هماهنگ‌سازی زمان‌بندی با Whisper.
+مدیریت تولید صوت با سرویس Gemini TTS و هماهنگ‌سازی زمان‌بندی با Whisper (با واردسازی امن).
 """
 import os
 import json
 import time
 import requests
-import whisper
 from episode_tools import finalize_turns
 
 API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
@@ -102,17 +101,21 @@ def synthesize_dialogue(turns, audio_path):
 
 
 def build_scene_timeline(summary, turns, audio_path):
-    """تشخیص گفتار با Whisper و هماهنگ‌سازی زمان‌بندی صحنه‌ها با دیالوگ‌ها"""
+    """تشخیص گفتار با Whisper (در صورت نصب بودن) و هماهنگ‌سازی زمان‌بندی صحنه‌ها با دیالوگ‌ها"""
     turns = finalize_turns(turns, summary)
     
-    print("بارگذاری مدل تشخیص گفتار (medium)...")
-    model = whisper.load_model("medium")
-    print(f"در حال پردازش صوت {audio_path}...")
-    result = model.transcribe(audio_path, language="fa")
-    
-    segments = result.get("segments", [])
-    total_words = sum(len(seg.get("text", "").split()) for seg in segments)
-    print(f"{total_words} کلمه از روی صدا تشخیص داده شد")
+    segments = []
+    try:
+        import whisper
+        print("بارگذاری مدل تشخیص گفتار (medium)...")
+        model = whisper.load_model("medium")
+        print(f"در حال پردازش صوت {audio_path}...")
+        result = model.transcribe(audio_path, language="fa")
+        segments = result.get("segments", [])
+        total_words = sum(len(seg.get("text", "").split()) for seg in segments)
+        print(f"{total_words} کلمه از روی صدا تشخیص داده شد")
+    except Exception as e:
+        print(f"توجه: امکان استفاده از Whisper فراهم نیست ({e}). استفاده از محاسبه‌گر زمان‌بندی استاندارد.")
     
     timeline = []
     n_turns = len(turns)
