@@ -18,10 +18,10 @@ import requests
 MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"]
 API = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent"
 
-LEAD = 0.15          # تصویر کمی زودتر از شروع جمله ظاهر بشه
-MIN_SEG = 2.0        # کوتاه‌تر از این، صحنه‌ی مستقل نمی‌شه
-MIN_COVERAGE = 0.55  # حداقل درصد کلماتی که باید با صدا تطبیق بخورن
-MAX_GAP = 18.0       # بیشترین فاصله‌ی مجاز بین دو نقطه‌ی تطبیق‌شده (ثانیه)
+LEAD = 0.15
+MIN_SEG = 2.0
+MIN_COVERAGE = 0.55
+MAX_GAP = 18.0
 
 
 # ---------------------------------------------------------------- Gemini
@@ -191,6 +191,7 @@ def build_catalog(summary):
     events = summary.get("events") or []
     goals = [e for e in events if e.get("type") == "Goal"]
     cards = [e for e in events if e.get("type") in ("Red Card", "Substitution")]
+    any_cards = [e for e in events if "card" in str(e.get("type", "")).lower()]
     players = ([(p, summary["home_team"]) for p in summary.get("home_top_players") or []]
                + [(p, summary["away_team"]) for p in summary.get("away_top_players") or []])
     c = {
@@ -200,6 +201,12 @@ def build_catalog(summary):
         "compare": "Overall side-by-side comparison of the two teams' stats",
         "shots": "Shot map on the goal: shooting, chances, saves, finishing",
     }
+    if (summary.get("table_context") or {}).get("top8"):
+        c["table"] = ("League standings table: league position, points, points gap, title race, "
+                      "relegation fight, form in the league, who is above/below whom in the table")
+    if any_cards:
+        c["cards"] = ("List of all yellow and red cards by team with minute and player: bookings, "
+                      "discipline, fouls, who was carded and when")
     if summary.get("prematch_prediction"):
         c["prediction"] = "Pre-match prediction/expectations vs the real result"
     for i, e in enumerate(goals):
@@ -251,8 +258,13 @@ def annotate(sents, summary):
         "- The visual must match the topic being spoken. When the hosts discuss a specific goal (by scorer, minute, "
         "assister, or by describing how it happened), use that goal:N for ALL sentences about that goal, including "
         "the discussion of why it happened.\n"
+        "- If the catalog has 'table': whenever the hosts talk about the league table, standings, league position, "
+        "points, points gap, title race, European places or relegation, use 'table' for ALL those sentences. "
+        "NEVER use compare or stat for that topic.\n"
+        "- If the catalog has 'cards': whenever the hosts talk about yellow cards, bookings, fouls or discipline "
+        "in general, use 'cards'. A specific red card or substitution -> card:N.\n"
         "- A specific statistic -> stat:Key. An individual player's performance -> player:N. "
-        "Red card / substitution -> card:N. A news item or coach/player quote -> news:N.\n"
+        "A news item or coach/player quote -> news:N.\n"
         "- General talk about how the game flowed -> momentum. Overall team comparison -> compare. "
         "Shooting, chances, saves -> shots. Pre-match expectations -> prediction.\n"
         "- Keep the same visual for as long as the topic stays the same. Change the visual exactly when the topic "
@@ -273,6 +285,10 @@ def annotate(sents, summary):
     for i in range(0, last_non + 1):
         if ids[i] == "outro":
             ids[i] = ids[i - 1] if i > 0 else "title"
+
+    for special in ("table", "cards"):
+        if special in catalog and special not in ids:
+            print(f"توجه: صحنه‌ی «{special}» برای این ویدیو انتخاب نشد (گوینده‌ها درباره‌اش حرفی نزدن).")
     return ids
 
 
