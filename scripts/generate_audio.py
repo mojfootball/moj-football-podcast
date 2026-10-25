@@ -1,15 +1,17 @@
 """
 generate_audio.py
-مدیریت تولید صوت با سرویس Gemini TTS و هماهنگ‌سازی زمان‌بندی با Whisper (با واردسازی امن).
+مدیریت تولید صوت با سرویس Gemini TTS و هماهنگ‌سازی زمان‌بندی با Whisper.
 """
 import os
 import json
 import time
 import requests
+import whisper
 from episode_tools import finalize_turns
 
 API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
+# استفاده از مدل استاندارد و پشتیبانی‌شده برای صوت و متن
+TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
 def tts_chunk(chunk):
     """تولید صوت برای یک تکه از متن با استفاده از جمنای و مدیریت هوشمند خطای 429"""
@@ -101,7 +103,7 @@ def synthesize_dialogue(turns, audio_path):
 
 
 def build_scene_timeline(summary, turns, audio_path):
-    """تشخیص گفتار با Whisper (در صورت نصب بودن) و هماهنگ‌سازی زمان‌بندی صحنه‌ها با دیالوگ‌ها"""
+    """تشخیص گفتار با Whisper و هماهنگ‌سازی زمان‌بندی صحنه‌ها با دیالوگ‌ها"""
     turns = finalize_turns(turns, summary)
     
     segments = []
