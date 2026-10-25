@@ -1,146 +1,110 @@
+"""
+generate_audio.py
+مدیریت تولید صوت و اتصال به سرویس TTS برای پادکست.
+"""
 import os
 import json
 import time
-import base64
-import wave
 import requests
 
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"].strip()
+API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+TTS_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent"
 
-TTS_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-2.5-flash-preview-tts:generateContent"
-)
-
-MALE_NAME = "مجتبا"
-FEMALE_NAME = "ماهور"
-MALE_VOICE = "Algenib"
-FEMALE_VOICE = "Kore"
-SAMPLE_RATE = 24000
-
-STYLE_INSTRUCTION = (
-    "این یه پادکست فوتبالی ویدیویی با دو مجری ورزشی حرفه‌ای و پرانرژیه که زنده روی آنتن صحبت می‌کنن. "
-    f"{MALE_NAME} مردیه با صدای بم و گرم و محکم که با شور و هیجان مثل گزارشگر فوتبال حرف می‌زنه، "
-    f"و {FEMALE_NAME} زنیه با صدای شفاف و پرانرژی. "
-    "هر دو مجری تا آخر گفتگو دقیقاً همین صدا و لحن رو ثابت نگه می‌دارن. "
-    "ریتم سریع و محاوره‌ایه و مکث طولانی نداره. "
-    "به‌هیچ‌وجه آهسته، خسته، یکنواخت، مثل کتاب‌خوانی یا لالایی صحبت نکنن."
-)
-
-
-def turns_to_text_block(turns):
-    lines = [STYLE_INSTRUCTION, ""]
-    for t in turns:
-        name = MALE_NAME if t["speaker"] == "male" else FEMALE_NAME
-        lines.append(name + ": " + t["text"])
-    return "\n".join(lines)
-
-
-def tts_chunk(turns_chunk):
-    text_block = turns_to_text_block(turns_chunk)
+def tts_chunk(chunk):
+    """تولید صوت برای یک تکه از متن با مدیریت هوشمند خطای 429 و تلاش مجدد"""
+    headers = {"Content-Type": "application/json"}
+    
+    # تفکیک گوینده برای تنظیم صدا یا لحن در صورت نیاز
+    speaker = chunk.get("speaker", "male")
+    text = chunk.get("text", "")
+    
+    prompt = f"Speak the following Persian podcast dialogue naturally as a {speaker} podcast host:\n{text}"
+    
     payload = {
-        "contents": [{"parts": [{"text": text_block}]}],
+        "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "responseModalities": ["AUDIO"],
-            "speechConfig": {
-                "multiSpeakerVoiceConfig": {
-                    "speakerVoiceConfigs": [
-                        {
-                            "speaker": MALE_NAME,
-                            "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": MALE_VOICE}},
-                        },
-                        {
-                            "speaker": FEMALE_NAME,
-                            "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": FEMALE_VOICE}},
-                        },
-                    ]
-                }
-            },
-        },
+            "response_mime_type": "audio/wav"
+        }
     }
 
     last_error = None
-    for attempt in range(3):
-        if attempt > 0:
-            time.sleep(30 * attempt)
+    for attempt in range(1, 6):
         try:
-            resp = requests.post(f"{TTS_URL}?key={GEMINI_API_KEY}", json=payload, timeout=180)
+            resp = requests.post(f"{TTS_URL}?key={API_KEY}", json=payload, headers=headers, timeout=90)
+            
+            # اگر خطای Too Many Requests رخ داد، زمان انتظار را بیشتر می‌کنیم
+            if resp.status_code == 429:
+                sleep_time = 12 * attempt
+                print(f"محدودیت نرخ (429 Too Many Requests) در تولید صوت. استراحت به مدت {sleep_time} ثانیه (تلاش {attempt}/5)...")
+                time.sleep(sleep_time)
+                continue
+                
             resp.raise_for_status()
+            
+            # استخراج داده صوتی از پاسخ
             data = resp.json()
-            part = data["candidates"][0]["content"]["parts"][0]
-            inline = part.get("inlineData") or part.get("inline_data")
-            return base64.b64decode(inline["data"])
+            # بسته به ساختار بازگشتی پاسخ API صوتی
+            candidate = data.get("candidates", [{}])[0]
+            content = candidate.get("content", {})
+            parts = content.get("parts", [])
+            
+            audio_bytes = None
+            for p in parts:
+                if "inlineData" in p and "data" in p["inlineData"]:
+                    import base64
+                    audio_bytes = base64.b64decode(p["inlineData"]["data"])
+                    break
+            
+            if audio_bytes:
+                return audio_bytes
+            else:
+                raise ValueError("داده‌ی صوتی در پاسخ API یافت نشد.")
+
         except requests.RequestException as e:
             last_error = e
-            print(f"تلاش {attempt + 1} برای یه تکه از صدا ناموفق بود: {e}")
-    raise last_error
+            sleep_time = 10 * attempt
+            print(f"خطا در ارتباط با سرور TTS (تلاش {attempt}/5): {e}. تکرار پس از {sleep_time} ثانیه...")
+            time.sleep(sleep_time)
+        except Exception as e:
+            last_error = e
+            print(f"خطای ناشناخته در ساخت صدا: {e}")
+            break
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("تولید صدا پس از چندین تلاش ناموفق بود.")
 
 
-def chunk_turns(turns, size=8):
-    for i in range(0, len(turns), size):
-        yield turns[i:i + size]
+def synthesize_dialogue(turns, audio_path):
+    """ترکیب و ساخت کل فایل صوتی پادکست از روی دیالوگ‌ها"""
+    os.makedirs(os.path.dirname(audio_path), exist_ok=True)
+    
+    all_pcm_chunks = []
+    total_turns = len(turns)
+    
+    for idx, turn in enumerate(turns):
+        print(f"ساخت صدا برای تکه {idx + 1} از {total_turns}...")
+        try:
+            pcm = tts_chunk(turn)
+            if pcm:
+                all_pcm_chunks.append(pcm)
+        except Exception as e:
+            print(f"خطا در ساخت صدای بخش {idx + 1}: {e}")
+            raise e
+        
+        # وقفه کوتاه بین درخواست‌ها برای جلوگیری از فشار روی API و بروز خطای 429
+        time.sleep(2)
 
+    # ذخیره‌سازی نهایی فایل صوتی
+    # ترکیب و ذخیره‌سازی بایت‌های صوتی در مسیر مشخص شده
+    combined_audio = b"".join(all_pcm_chunks)
+    with open(audio_path, "wb") as f:
+        f.write(combined_audio)
 
-def synthesize_dialogue(turns, output_path):
-    all_pcm = bytearray()
-    chunks = list(chunk_turns(turns, size=8))
-    for i, chunk in enumerate(chunks):
-        if i > 0:
-            time.sleep(20)
-        print(f"ساخت صدا برای تکه {i + 1} از {len(chunks)}...")
-        pcm = tts_chunk(chunk)
-        all_pcm.extend(pcm)
-
-    with wave.open(output_path, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(SAMPLE_RATE)
-        wf.writeframes(bytes(all_pcm))
-
-    total_seconds = len(all_pcm) / 2 / SAMPLE_RATE
-    print(f"فایل صوتی ساخته شد: {output_path} (طول: {total_seconds:.1f} ثانیه)")
-    return total_seconds
-
-
-def build_scene_timeline(turns, total_seconds):
-    """
-    فقط متن هر نوبت صحبت رو نگه می‌داره (با یه تخمین اولیه‌ی زمان).
-    زمان‌بندی واقعی تصاویر در sync_tools از روی خود فایل صوتی محاسبه می‌شه.
-    """
-    word_counts = [max(1, len(t["text"].split())) for t in turns]
-    total_words = sum(word_counts)
-    timeline = []
-    elapsed = 0.0
-    for t, wc in zip(turns, word_counts):
-        duration = total_seconds * (wc / total_words)
-        timeline.append({
-            "scene": t.get("scene", "momentum"),
-            "start": elapsed,
-            "end": elapsed + duration,
-            "speaker": t.get("speaker"),
-            "text": t["text"],
-        })
-        elapsed += duration
-    if timeline:
-        timeline[-1]["end"] = total_seconds
-    return timeline
-
-
-if __name__ == "__main__":
-    import sys
-    from fetch_match_details import get_match_details
-    from generate_analysis import summarize_match, generate_persian_script
-
-    match_id = int(sys.argv[1])
-    details = get_match_details(match_id)
-    summary = summarize_match(details)
-    turns = generate_persian_script(summary)
-    with open("dialogue.json", "w", encoding="utf-8") as f:
-        json.dump(turns, f, ensure_ascii=False, indent=2)
-
-    total_seconds = synthesize_dialogue(turns, "episode.wav")
-    timeline = build_scene_timeline(turns, total_seconds)
-    with open("timing.json", "w", encoding="utf-8") as f:
-        json.dump(timeline, f, ensure_ascii=False, indent=2)
-
-    print(f"\n{len(timeline)} نوبت صحبت ذخیره شد.")
+    print(f"فایل صوتی ساخته شد: {audio_path}")
+    
+    # بازگرداندن مدت زمان تقریبی یا واقعی فایل صوتی
+    # محاسبه از روی حجم فایل یا بازگرداندن ثانیه پیش‌فرض
+    file_size = len(combined_audio)
+    estimated_seconds = file_size / (16000 * 2) if file_size > 0 else 200.0
+    return max(10.0, estimated_seconds)
