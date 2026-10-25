@@ -87,7 +87,7 @@ class SceneBuilder:
 
         if kind == "table":
             tc = s.get("table_context")
-            if not tc or not tc.get("top8"):
+            if not tc or not tc.get("top12"):
                 raise ValueError("جدول لیگ برای این بازی در دسترس نیست")
             return {"type": "table", **teams, "table_context": tc}
 
