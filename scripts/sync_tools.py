@@ -201,7 +201,7 @@ def build_catalog(summary):
         "compare": "Overall side-by-side comparison of the two teams' stats",
         "shots": "Shot map on the goal: shooting, chances, saves, finishing",
     }
-        if (summary.get("table_context") or {}).get("rows"):
+    if (summary.get("table_context") or {}).get("rows"):
         c["table"] = ("League standings table: league position, points, points gap, title race, "
                       "relegation fight, form in the league, who is above/below whom in the table")
     if any_cards:
