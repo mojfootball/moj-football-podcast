@@ -14,7 +14,7 @@ GEMINI_MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"]
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent"
 
 KNOWN_FA = {str(v): k for k, v in TEAMS.items()}
-_cache = {}
+_cache = {}TABLE_SIZE = 12   # تعداد تیم‌های بالای جدول
 
 
 def get_standings(league_id, season):
@@ -176,14 +176,14 @@ def get_table_context(league_id, season, home_id, away_id):
         if p["rank"] is None:
             p["rank"] = i
 
-    top8 = chosen[:8]
-    extras = [p for p in chosen[8:] if p["team_id"] in (hid, aid)]
+        top = chosen[:TABLE_SIZE]
+    extras = [p for p in chosen[TABLE_SIZE:] if p["team_id"] in (hid, aid)]
 
-    shown = top8 + extras
+    shown = top + extras
     need = [p["name"] for p in shown if p["team_id"] not in KNOWN_FA]
     fa_map = translate_team_names(need)
     for p in shown:
         p["fa_name"] = KNOWN_FA.get(p["team_id"]) or fa_map.get(p["name"], p["name"])
 
-    print(f"جدول لیگ: {len(chosen)} تیم | نمونه‌ی ردیف اول: {top8[0]}")
-    return {"top8": top8, "extras": extras, "home_id": hid, "away_id": aid, "total_teams": len(chosen)}
+    print(f"جدول لیگ: {len(chosen)} تیم | نمونه‌ی ردیف اول: {top[0]}")
+    return {"rows": top, "extras": extras, "home_id": hid, "away_id": aid, "total_teams": len(chosen)}
