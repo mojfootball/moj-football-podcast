@@ -1050,7 +1050,7 @@ def _extras(fn):
 SCENES = {
     "title": scene_title, "goal": scene_goal, "card_or_sub": scene_card_or_sub, "stat_bar": scene_stat_bar,
     "shot_map": scene_shot_map, "player_card": scene_player_card, "prediction": scene_prediction,
-    "news": scene_news, "momentum": scene_momentum, "outro": scene_outro,
+    "news": scene_news, "momentum": _extras(scene_extras.scene_momentum), "outro": scene_outro,
     "goal_pitch": scene_goal_pitch, "compare": scene_compare,
     "table": _extras(scene_extras.scene_table),
     "cards": _extras(scene_extras.scene_cards),
