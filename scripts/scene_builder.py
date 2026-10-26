@@ -85,10 +85,10 @@ class SceneBuilder:
                 raise ValueError("پیش‌بینی قبل از بازی در داده‌ها نیست")
             return {"type": "prediction", "prediction": s["prematch_prediction"], **teams, "score": s["score"]}
 
-        if kind == "table":
+                if kind == "table":
             tc = s.get("table_context")
-            if not tc or not tc.get("top12"):
-                raise ValueError("جدول لیگ برای این بازی در دسترس نیست")
+            if not tc or not tc.get("rows"):
+                raise ValueError(f"جدول لیگ در دسترس نیست. کلیدها: {list((tc or {}).keys())}")
             return {"type": "table", **teams, "table_context": tc}
 
         if kind == "cards":
