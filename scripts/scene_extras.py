@@ -149,3 +149,150 @@ def scene_cards(s, summary, B):
             r = B.with_alpha(st, p)
             img.paste(r, (x0 + int((1 - p) * 50), y - 21), r)
     return base, dyn
+    # ===== صحنه‌ی روند بازی (تایم‌لاین دو ستونه) =====
+from PIL import Image, ImageDraw
+
+_GOLD = (250, 204, 21)
+_RED = (239, 68, 68)
+_NAVY = (15, 23, 42)
+
+
+def _ev_kind(e):
+    t = str(e.get("type", "")).lower()
+    if "miss" in t or "var" in t:
+        return None
+    if "goal" in t:
+        return "goal"
+    if "red" in t:
+        return "red"
+    if "card" in t or "yellow" in t:
+        return "yellow"
+    if "sub" in t:
+        return "sub"
+    return None
+
+
+def _draw_icon(dr, kind, ix, cy):
+    if kind == "goal":
+        dr.ellipse((ix - 12, cy - 12, ix + 12, cy + 12), fill=_GOLD + (255,), outline=_NAVY + (255,), width=3)
+        dr.ellipse((ix - 4, cy - 4, ix + 4, cy + 4), fill=_NAVY + (255,))
+    elif kind in ("yellow", "red"):
+        col = _GOLD if kind == "yellow" else _RED
+        dr.rounded_rectangle((ix - 8, cy - 12, ix + 8, cy + 12), radius=3, fill=col + (255,))
+    else:
+        dr.polygon([(ix - 7, cy - 1), (ix + 7, cy - 1), (ix, cy - 12)], fill=(52, 211, 153, 255))
+        dr.polygon([(ix - 7, cy + 1), (ix + 7, cy + 1), (ix, cy + 12)], fill=(251, 113, 133, 255))
+
+
+def scene_momentum(s, summary, B):
+    import re as _re
+    W = B.W
+    base, d = B.new_layer()
+    B.header(d, "روند بازی", y=118)
+    home, away = s["home_team"], s["away_team"]
+    ROWS, PITCH, SPINE, Y0 = 8, 46, W // 2, 262
+
+    def minute(e):
+        m = _re.findall(r"\d+", str(e.get("time") or ""))
+        return sum(int(x) for x in m[:2]) if m else 0
+
+    evs = []
+    for e in sorted(s.get("events") or [], key=minute):
+        k = _ev_kind(e)
+        if k:
+            evs.append((k, e))
+    if len(evs) > ROWS:
+        evs = [x for x in evs if x[0] != "sub"]
+    evs = evs[:ROWS * 4]
+
+    if not evs:
+        B.text(d, (W // 2, 380), "رویدادی ثبت نشده", 34, B.MUTED, bold=False)
+        return base, None
+
+    def make_row(kind, e, is_home, score):
+        st = Image.new("RGBA", (W, 44), (0, 0, 0, 0))
+        dr = ImageDraw.Draw(st)
+        cy = 22
+        col = B.HOME if is_home else B.AWAY
+        x0, x1 = (SPINE + 52, W - 60) if is_home else (60, SPINE - 52)
+        if kind == "goal":
+            B.rrect(dr, (x0, 2, x1, 42), 14, fill=B.GOLD + (70,), outline=B.GOLD + (230,), width=2)
+        else:
+            B.rrect(dr, (x0, 2, x1, 42), 14, fill=(255, 255, 255, 34))
+        B.rrect(dr, (SPINE - 42, 5, SPINE + 42, 39), 17, fill=_NAVY + (240,), outline=col + (255,), width=3)
+        B.text(dr, (SPINE, cy - 1), B.fnum(e.get("time")) + "'", 21)
+        _draw_icon(dr, kind, x1 - 26, cy)
+
+        name = e.get("player") or "-"
+        extra = None
+        if kind == "goal" and e.get("assist"):
+            extra = "پاس گل: " + str(e["assist"])
+        elif kind == "sub" and e.get("assist"):
+            extra = "به‌جای " + str(e["assist"])
+        left_pad = 110 if kind == "goal" else 24
+        maxw = (x1 - 52) - (x0 + left_pad)
+        if extra:
+            B.fit_text(dr, (x1 - 52, cy - 8), name, 22, maxw, anchor="rm")
+            B.fit_text(dr, (x1 - 52, cy + 12), extra, 16, maxw, fill=B.MUTED, bold=False, anchor="rm")
+        else:
+            B.fit_text(dr, (x1 - 52, cy), name, 24, maxw, anchor="rm")
+        if kind == "goal":
+            cx = x0 + 52
+            B.text(dr, (cx - 22, cy - 1), B.fnum(score[1]), 26, B.GOLD_SOFT)
+            B.text(dr, (cx, cy - 3), ":", 24, B.MUTED)
+            B.text(dr, (cx + 22, cy - 1), B.fnum(score[0]), 26, B.GOLD_SOFT)
+        return st
+
+    hs = as_ = 0
+    rows = []
+    for k, e in evs:
+        is_home = e.get("team") == home
+        if k == "goal":
+            if is_home:
+                hs += 1
+            else:
+                as_ += 1
+        rows.append((make_row(k, e, is_home, (hs, as_)), is_home))
+    pages = [rows[i:i + ROWS] for i in range(0, len(rows), ROWS)]
+
+    # سرستون‌ها
+    lg_h = B.badge(home, summary.get("home_logo"), 40)
+    lg_a = B.badge(away, summary.get("away_logo"), 40)
+    base.paste(lg_h, (W - 60 - 40, 176), lg_h)
+    base.paste(lg_a, (60, 176), lg_a)
+    B.fit_text(d, (W - 60 - 52, 196), home, 30, 400, fill=B.HOME, anchor="rm")
+    B.fit_text(d, (60 + 52, 196), away, 30, 400, fill=B.AWAY, anchor="lm")
+
+    # ستون وسط
+    n_first = min(ROWS, len(rows))
+    d.line((SPINE, 236, SPINE, Y0 + (n_first - 1) * PITCH + 24), fill=(255, 255, 255, 70), width=4)
+
+    # راهنما
+    present = [k for k in ("goal", "yellow", "red", "sub") if any(x[0] == k for x in evs)]
+    labels = {"goal": "گل", "yellow": "کارت زرد", "red": "کارت قرمز", "sub": "تعویض"}
+    step = 170
+    lx = W // 2 + (len(present) - 1) * step // 2
+    for k in present:
+        _draw_icon(d, k, lx, 640)
+        B.text(d, (lx - 22, 640), labels[k], 20, B.MUTED, bold=False, anchor="rm")
+        lx -= step
+
+    def dyn(dd, img, lt, dur):
+        n = len(pages)
+        pd = dur / n
+        pi = min(n - 1, int(lt / pd))
+        lp = lt - pi * pd
+        fade = 1.0 if pi == n - 1 else B.clamp((pd - lp) / 0.3)
+        for i, (st, is_home) in enumerate(pages[pi]):
+            p = B.ease_out((lp - 0.12 * i) / 0.4)
+            if p <= 0:
+                continue
+            r = B.with_alpha(st, p * fade)
+            off = int((1 - p) * 60) * (1 if is_home else -1)
+            img.paste(r, (off, Y0 + i * PITCH - 22), r)
+        if n > 1:
+            for j in range(n):
+                cx = W // 2 + (j - (n - 1) / 2) * 22
+                col = B.GOLD if j == pi else (255, 255, 255, 110)
+                dd.ellipse((cx - 5, 664 - 5, cx + 5, 664 + 5), fill=col if len(col) == 4 else col + (255,))
+    return base, dyn
