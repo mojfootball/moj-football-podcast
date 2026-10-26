@@ -24,22 +24,27 @@ def _minute(t):
 def scene_table(s, summary, B):
     W = B.W
     base, d = B.new_layer()
-    B.header(d, "جدول رده‌بندی", y=118)
+    B.header(d, "جدول رده‌بندی", y=108)
 
     tc = s.get("table_context") or {}
-    rows = list(tc.get("top12") or [])
+    rows = list(tc.get("rows") or [])
     extras = list(tc.get("extras") or [])
     if not rows:
-        raise ValueError("جدول لیگ خالیه")
+        raise ValueError(f"جدول لیگ خالیه. کلیدهای موجود: {list(tc.keys())}")
     ids = (str(tc.get("home_id")), str(tc.get("away_id")))
 
-    rh = 38 if (len(rows) > 6 or extras) else 48
+    TOP, BOTTOM = 196, 686
+    dots_h = 26 if extras else 0
+    n = len(rows) + len(extras)
+    rh = int(B.clamp((BOTTOM - TOP - dots_h) / n, 28, 48))
+    fs = max(15, int(rh * 0.56))
+    bsz = rh - 8
 
     for _, label, x in COLS:
-        B.text(d, (x, 190), label, 21, B.MUTED, bold=False)
-    B.text(d, (RANK_X, 190), "#", 21, B.MUTED, bold=False)
-    B.text(d, (NAME_X, 190), "تیم", 21, B.MUTED, bold=False, anchor="rm")
-    d.line((60, 210, W - 60, 210), fill=(255, 255, 255, 90), width=2)
+        B.text(d, (x, 168), label, 20, B.MUTED, bold=False)
+    B.text(d, (RANK_X, 168), "#", 20, B.MUTED, bold=False)
+    B.text(d, (NAME_X, 168), "تیم", 20, B.MUTED, bold=False, anchor="rm")
+    d.line((60, 186, W - 60, 186), fill=(255, 255, 255, 90), width=2)
 
     def make_row(row, idx):
         strip = Image.new("RGBA", (W, rh), (0, 0, 0, 0))
@@ -53,10 +58,10 @@ def scene_table(s, summary, B):
             c_main, c_num, c_pts = B.TEXT, (226, 233, 247), B.GOLD
         cy = rh // 2
 
-        B.text(dr, (RANK_X, cy), B.fnum(row.get("rank")), 22, c_main)
-        lg = B.badge(row.get("name"), row.get("logo"), 28)
-        strip.paste(lg, (BADGE_X - 14, (rh - 28) // 2), lg)
-        B.fit_text(dr, (NAME_X, cy), row.get("fa_name") or row.get("name"), 22, 340, fill=c_main, anchor="rm")
+        B.text(dr, (RANK_X, cy), B.fnum(row.get("rank")), fs, c_main)
+        lg = B.badge(row.get("name"), row.get("logo"), bsz)
+        strip.paste(lg, (BADGE_X - bsz // 2, (rh - bsz) // 2), lg)
+        B.fit_text(dr, (NAME_X, cy), row.get("fa_name") or row.get("name"), fs, 340, fill=c_main, anchor="rm")
 
         for key, _, x in COLS:
             v = row.get(key)
@@ -67,38 +72,35 @@ def scene_table(s, summary, B):
             else:
                 txt = B.fnum(v)
             if key == "points":
-                B.text(dr, (x, cy), txt, 26, c_pts)
+                B.text(dr, (x, cy), txt, fs + 3, c_pts)
             else:
-                B.text(dr, (x, cy), txt, 22, c_num, bold=False)
+                B.text(dr, (x, cy), txt, fs, c_num, bold=False)
         return strip
 
     items = []
-    y = 236
     for i, r in enumerate(rows):
-        items.append((make_row(r, i), y))
-        y += rh
+        items.append((make_row(r, i), TOP + i * rh))
     dots_y = None
     if extras:
-        dots_y = y - rh // 2 + 22
-        y = dots_y + 30
+        end_y = TOP + len(rows) * rh
+        dots_y = end_y + dots_h // 2
         for j, r in enumerate(extras):
-            items.append((make_row(r, j), y))
-            y += rh
+            items.append((make_row(r, j), end_y + dots_h + j * rh))
     n_top = len(rows)
 
     def dyn(dd, img, lt, dur):
         for i, (strip, yy) in enumerate(items):
-            p = B.ease_out((lt - 0.1 * i) / 0.4)
+            p = B.ease_out((lt - 0.08 * i) / 0.4)
             if p <= 0:
                 continue
             r = B.with_alpha(strip, p)
-            img.paste(r, (int((1 - p) * 70), yy - rh // 2), r)
+            img.paste(r, (int((1 - p) * 70), yy), r)
         if dots_y is not None:
-            q = B.ease_out((lt - 0.1 * n_top) / 0.3)
+            q = B.ease_out((lt - 0.08 * n_top) / 0.3)
             if q > 0:
                 for k in (-1, 0, 1):
                     cx = W // 2 + k * 22
-                    dd.ellipse((cx - 5, dots_y - 5, cx + 5, dots_y + 5), fill=(255, 255, 255, int(210 * q)))
+                    dd.ellipse((cx - 4, dots_y - 4, cx + 4, dots_y + 4), fill=(255, 255, 255, int(210 * q)))
     return base, dyn
 
 
