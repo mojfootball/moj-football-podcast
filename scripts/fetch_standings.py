@@ -14,7 +14,8 @@ GEMINI_MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"]
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent"
 
 KNOWN_FA = {str(v): k for k, v in TEAMS.items()}
-_cache = {} TABLE_SIZE = 12   # تعداد تیم‌های بالای جدول
+_cache = {}
+TABLE_SIZE = 12   # تعداد تیم‌های بالای جدول
 
 
 def get_standings(league_id, season):
