@@ -17,10 +17,10 @@ MAX_THUMB_BYTES = 2_000_000
 def get_service():
     creds = Credentials(
         token=None,
-        refresh_token=os.environ["YT_REFRESH_TOKEN"].strip(),
+        refresh_token=os.environ["YOUTUBE_REFRESH_TOKEN"].strip(),
         token_uri=TOKEN_URI,
-        client_id=os.environ["YT_CLIENT_ID"].strip(),
-        client_secret=os.environ["YT_CLIENT_SECRET"].strip(),
+        client_id=os.environ["YOUTUBE_CLIENT_ID"].strip(),
+        client_secret=os.environ["YOUTUBE_CLIENT_SECRET"].strip(),
         scopes=SCOPES,
     )
     creds.refresh(Request())
