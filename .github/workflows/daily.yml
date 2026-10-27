@@ -2,50 +2,94 @@ name: Daily Pipeline
 
 on:
   schedule:
-    - cron: "27 7 * * *"
+    - cron: "27 7 * * *"   # 10:57 به وقت ایران
   workflow_dispatch:
 
 permissions:
   contents: write
 
-jobs:
-  run:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+concurrency:
+  group: daily-pipeline
+  cancel-in-progress: false
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+env:
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    outputs:
+      matches: ${{ steps.find.outputs.matches }}
+      count: ${{ steps.find.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+      - run: pip install requests
+      - name: Find finished matches
+        id: find
+        working-directory: scripts
+        env:
+          HIGHLIGHTLY_API_KEY: ${{ secrets.HIGHLIGHTLY_API_KEY }}
+        run: python find_matches_ci.py
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
+  build:
+    name: build ${{ matrix.match.id }}
+    needs: find
+    if: needs.find.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        match: ${{ fromJSON(needs.find.outputs.matches) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
       - name: Install ffmpeg and Persian font
         run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-vazirmatn
-
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Run daily pipeline
+      - name: Cache Whisper model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-medium-v1
+      - name: Build video
         working-directory: scripts
         env:
           HIGHLIGHTLY_API_KEY: ${{ secrets.HIGHLIGHTLY_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python main.py
+        run: python build_one.py "${{ matrix.match.id }}" "${{ matrix.match.order }}"
+      - name: Add video to upload queue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          D="scripts/output/${{ matrix.match.id }}"
+          gh release create "q-${{ matrix.match.id }}" \
+            "$D/final.mp4" "$D/thumbnail.jpg" "$D/youtube.json" \
+            --target "${{ github.sha }}" \
+            --title "queue ${{ matrix.match.id }}" \
+            --notes "upload queue" --prerelease
 
-      - name: Upload episode outputs
-        uses: actions/upload-artifact@v4
-        with:
-          name: daily-episodes
-          path: scripts/output/
-
-      - name: Commit updated processed-matches state
+  record:
+    needs: [find, build]
+    if: ${{ !cancelled() && needs.find.result == 'success' && needs.find.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record queued matches as processed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/mark_enqueued.py
+      - name: Commit state
         run: |
           git config user.name "moj-football-bot"
           git config user.email "actions@github.com"
           git add data/processed_matches.json
-          git diff --cached --quiet || git commit -m "Update processed matches"
-          git push
+          git diff --cached --quiet || (git commit -m "Update processed matches" && git pull --rebase && git push)
