@@ -48,7 +48,7 @@ def get_matches_for_team_date(team_id, date_str, side):
 def find_finished_matches():
     today = datetime.now(timezone.utc).date()
     yesterday = today - timedelta(days=1)
-    dates_to_check = [str(yesterday), str(today)]
+    dates_to_check = [str(yesterday)]
 
     processed_ids = load_processed_ids()
     finished = {}
