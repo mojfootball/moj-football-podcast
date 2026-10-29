@@ -1,4 +1,5 @@
-"""upload_next.py - یک ویدیو از صف (Release های q-*) رو در یوتیوب آپلود می‌کنه.
+"""upload_next.py - یک ویدیو از صف (Release های q-*) رو در یوتیوب آپلود می‌کنه
+و بعدش کاور + لینک رو تو کانال تلگرام می‌ذاره.
 ترتیب: روز جدیدتر اول، داخل هر روز اولویت تیم‌ها. ویدیوهای قدیمی از صف حذف می‌شن."""
 import os
 import json
@@ -8,6 +9,7 @@ import datetime as dt
 from googleapiclient.errors import HttpError
 
 from youtube_uploader import get_service, upload_video, set_thumbnail
+from telegram_post import send_video_post
 
 STOP_REASONS = ("quotaExceeded", "uploadLimitExceeded", "rateLimitExceeded")
 WORK = "queue_tmp"
@@ -101,6 +103,12 @@ def main():
                 print("کاور تنظیم شد.")
             except Exception as e:  # noqa: BLE001
                 print(f"کاور تنظیم نشد (ویدیو آپلود شده): {e}")
+
+        try:
+            send_video_post(thumb, meta["title"], vid)
+        except Exception as e:  # noqa: BLE001
+            print(f"ارسال به تلگرام ناموفق (آپلود یوتیوب انجام شده): {e}")
+
         gh("release", "delete", tag, "--cleanup-tag", "--yes")
         print("از صف حذف شد.")
         return  # فقط یک ویدیو در هر اجرا
