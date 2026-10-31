@@ -33,6 +33,7 @@ jobs:
         working-directory: scripts
         env:
           HIGHLIGHTLY_API_KEY: ${{ secrets.HIGHLIGHTLY_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
         run: python find_matches_ci.py
 
   build:
@@ -71,7 +72,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           D="scripts/output/${{ matrix.match.id }}"
-          gh release create "q-${{ matrix.match.id }}" \
+          TAG="q-${{ matrix.match.id }}"
+          gh release delete "$TAG" --cleanup-tag --yes 2>/dev/null || true
+          gh release create "$TAG" \
             "$D/final.mp4" "$D/thumbnail.jpg" "$D/youtube.json" \
             --target "${{ github.sha }}" \
             --title "queue ${{ matrix.match.id }}" \
